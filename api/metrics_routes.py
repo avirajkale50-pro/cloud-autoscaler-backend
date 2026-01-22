@@ -10,7 +10,7 @@ def get_instance_metrics(current_user, instance_id):
     """Get metrics for a specific instance."""
     user_id = current_user['user_id']
     
-    # Verify instance ownership
+    # Verify the instance who is the owner
     instance = Instance.query.filter_by(instance_id=instance_id).first()
     if not instance:
         return jsonify({'error': 'Instance not found'}), 404
@@ -45,7 +45,6 @@ def get_scaling_decisions(current_user, instance_id):
     """Get scaling decisions for a specific instance."""
     user_id = current_user['user_id']
     
-    # Verify instance ownership
     instance = Instance.query.filter_by(instance_id=instance_id).first()
     if not instance:
         return jsonify({'error': 'Instance not found'}), 404
@@ -83,13 +82,13 @@ def simulate_metrics(current_user):
     user_id = current_user['user_id']
     data = request.get_json()
     
-    # Validate required fields
+
     if not data or 'instance_id' not in data:
         return jsonify({'error': 'instance_id is required'}), 400
     
     instance_id = data['instance_id']
     
-    # Verify instance ownership
+
     instance = Instance.query.filter_by(instance_id=instance_id).first()
     if not instance:
         return jsonify({'error': 'Instance not found'}), 404
@@ -97,7 +96,7 @@ def simulate_metrics(current_user):
     if str(instance.user_id) != str(user_id):
         return jsonify({'error': 'Unauthorized: You don\'t own this instance'}), 403
     
-    # Create simulated metric
+    # stimulated data
     metric = Metric(
         instance_id=instance_id,
         cpu_utilization=data.get('cpu_utilization'),

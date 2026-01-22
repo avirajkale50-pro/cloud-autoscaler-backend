@@ -8,10 +8,10 @@ class User(db.Model):
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = db.Column(db.String, unique=True, nullable=False)
-    password = db.Column(db.String, nullable=False)  # Will store hashed password
+    password = db.Column(db.String, nullable=False)  # to hash password
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationships
+    
     instances = db.relationship('Instance', backref='user', lazy=True)
 
     def __repr__(self):
@@ -28,7 +28,7 @@ class Instance(db.Model):
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), nullable=False)
     is_monitoring = db.Column(db.Boolean, default=False)
 
-    # Relationships
+    
     metrics = db.relationship('Metric', backref='instance', lazy=True)
     decisions = db.relationship('ScalingDecision', backref='instance', lazy=True)
 

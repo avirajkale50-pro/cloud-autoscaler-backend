@@ -33,7 +33,7 @@ def fetch_instance_metrics(instance_id, region):
     
     cpu = get_metric(cw, instance_id, 'CPUUtilization', 'AWS/EC2')
     # Memory metrics usually come from the CloudWatch Agent (custom namespace 'CWAgent')
-    # If the agent is not installed/configured, this will return None
+    # If the agent is not installed/configured, this will return -> None
     memory = get_metric(cw, instance_id, 'mem_used_percent', 'CWAgent')
     net_in = get_metric(cw, instance_id, 'NetworkIn', 'AWS/EC2')
     net_out = get_metric(cw, instance_id, 'NetworkOut', 'AWS/EC2')
