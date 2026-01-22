@@ -10,6 +10,7 @@ from flask_apscheduler import APScheduler
 from service.aws_monitor import fetch_instance_metrics
 from service.scaling_service import process_all_monitored_instances
 from repo.models import Instance, Metric
+from util.logger import logger
 
 load_dotenv()
 
@@ -18,16 +19,18 @@ scheduler = APScheduler()
 def fetch_metrics_job(app):
     """Job to fetch metrics for all instances that are being monitored."""
     with app.app_context():
-        print("Running fetch_metrics_job...")
-        # Only fetch metrics for instances with is_monitoring=True
-        instances = Instance.query.filter_by(is_monitoring=True).all()
+        # Check if any instances are being monitored before running the job
+        monitored_count = Instance.query.filter_by(is_monitoring=True).count()
         
-        if not instances:
-            print("No instances are currently being monitored.")
+        if monitored_count == 0:
+            # Skip job execution - no instances to monitor
             return
         
+        logger.info(f"Running fetch_metrics_job for {monitored_count} instance(s)...")
+        instances = Instance.query.filter_by(is_monitoring=True).all()
+        
         for instance in instances:
-            print(f"Fetching metrics for {instance.instance_id}...")
+            logger.info(f"Fetching metrics for {instance.instance_id}...")
             metrics_data = fetch_instance_metrics(instance.instance_id, instance.region)
             
             if metrics_data:
@@ -41,29 +44,36 @@ def fetch_metrics_job(app):
                        network_out=metrics_data.get('network_out')
                    )
                    db.session.add(new_metric)
-                   print(f"Saved metrics for {instance.instance_id}")
+                   logger.info(f"Saved metrics for {instance.instance_id}")
                 else:
-                    print(f"No metrics found for {instance.instance_id}")
+                    logger.warning(f"No metrics found for {instance.instance_id}")
             else:
-                 print(f"Failed to fetch metrics for {instance.instance_id}")
+                 logger.error(f"Failed to fetch metrics for {instance.instance_id}")
         
         try:
             db.session.commit()
         except Exception as e:
-            print(f"Error saving metrics: {e}")
+            logger.error(f"Error saving metrics: {e}")
             db.session.rollback()
 
 def scaling_decision_job(app):
     """Job to make scaling decisions for all monitored instances."""
     with app.app_context():
-        print("Running scaling_decision_job...")
+        # Check if any instances are being monitored before running the job
+        monitored_count = Instance.query.filter_by(is_monitoring=True).count()
+        
+        if monitored_count == 0:
+            # Skip job execution - no instances to monitor
+            return
+        
+        logger.info(f"Running scaling_decision_job for {monitored_count} instance(s)...")
         results = process_all_monitored_instances()
         
         for result in results:
             if result['success']:
-                print(f"Decision for {result['instance_id']}: {result['result']}")
+                logger.info(f"Decision for {result['instance_id']}: {result['result']}")
             else:
-                print(f"Failed to make decision for {result['instance_id']}: {result['result']}")
+                logger.error(f"Failed to make decision for {result['instance_id']}: {result['result']}")
 
 def create_app():
     app = Flask(__name__)
@@ -117,9 +127,9 @@ def create_app():
         # Create tables
         try:
             db.create_all()
-            print("Database connected and tables created (if not exist).")
+            logger.info("Database connected and tables created (if not exist).")
         except Exception as e:
-            print(f"Error connecting to database: {e}")
+            logger.error(f"Error connecting to database: {e}")
     
     return app
 

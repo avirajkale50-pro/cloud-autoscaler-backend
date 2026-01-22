@@ -33,7 +33,9 @@ def get_instance_metrics(current_user, instance_id):
             'cpu_utilization': m.cpu_utilization,
             'memory_usage': m.memory_usage,
             'network_in': m.network_in,
-            'network_out': m.network_out
+            'network_out': m.network_out,
+            'is_outlier': m.is_outlier,
+            'outlier_type': m.outlier_type
         } for m in metrics]
     }), 200
 
@@ -71,3 +73,58 @@ def get_scaling_decisions(current_user, instance_id):
             'reason': d.reason
         } for d in decisions]
     }), 200
+
+@metrics_bp.route('/simulate', methods=['POST'])
+@token_required
+def simulate_metrics(current_user):
+    """Simulate metrics for testing purposes."""
+    from repo.db import db
+    
+    user_id = current_user['user_id']
+    data = request.get_json()
+    
+    # Validate required fields
+    if not data or 'instance_id' not in data:
+        return jsonify({'error': 'instance_id is required'}), 400
+    
+    instance_id = data['instance_id']
+    
+    # Verify instance ownership
+    instance = Instance.query.filter_by(instance_id=instance_id).first()
+    if not instance:
+        return jsonify({'error': 'Instance not found'}), 404
+    
+    if str(instance.user_id) != str(user_id):
+        return jsonify({'error': 'Unauthorized: You don\'t own this instance'}), 403
+    
+    # Create simulated metric
+    metric = Metric(
+        instance_id=instance_id,
+        cpu_utilization=data.get('cpu_utilization'),
+        memory_usage=data.get('memory_usage'),
+        network_in=data.get('network_in'),
+        network_out=data.get('network_out')
+    )
+    
+    try:
+        db.session.add(metric)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Simulated metric created successfully',
+            'metric': {
+                'id': str(metric.id),
+                'instance_id': metric.instance_id,
+                'timestamp': metric.timestamp.isoformat(),
+                'cpu_utilization': metric.cpu_utilization,
+                'memory_usage': metric.memory_usage,
+                'network_in': metric.network_in,
+                'network_out': metric.network_out,
+                'is_outlier': metric.is_outlier,
+                'outlier_type': metric.outlier_type
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create metric: {str(e)}'}), 500
+

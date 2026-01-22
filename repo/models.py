@@ -46,6 +46,10 @@ class Metric(db.Model):
     memory_usage = db.Column(db.Float)
     network_in = db.Column(db.BigInteger)
     network_out = db.Column(db.BigInteger)
+    
+    # Outlier flags - metrics that triggered immediate scaling decisions
+    is_outlier = db.Column(db.Boolean, default=False)
+    outlier_type = db.Column(db.String)  # 'scale_up', 'scale_down', or None
 
     def __repr__(self):
         return f'<Metric {self.id}>'

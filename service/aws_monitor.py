@@ -1,5 +1,6 @@
 import boto3
 from datetime import datetime, timedelta
+from util.logger import logger
 
 def get_cloudwatch_client(region):
     return boto3.client('cloudwatch', region_name=region)
@@ -24,7 +25,7 @@ def get_metric(cw_client, instance_id, metric_name, namespace, stat='Average'):
             # Sort by timestamp to get the absolute latest value
             return sorted(response['Datapoints'], key=lambda x: x['Timestamp'])[-1][stat]
     except Exception as e:
-        print(f"Error fetching metric {metric_name} for {instance_id}: {e}")
+        logger.error(f"Error fetching metric {metric_name} for {instance_id}: {e}")
     return None
 
 def fetch_instance_metrics(instance_id, region):
