@@ -3,6 +3,7 @@ from api.routes import api_bp
 from api.auth_routes import auth_bp
 from api.instance_routes import instance_bp
 from api.metrics_routes import metrics_bp
+from flask_cors import CORS
 from repo.db import db
 from dotenv import load_dotenv
 import os
@@ -85,6 +86,7 @@ def scaling_decision_job(app):
 
 def create_app():
     app = Flask(__name__)
+    CORS(app)
     
     # Configure Database
     database_url = os.getenv('DATABASE_URL')
