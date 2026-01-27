@@ -1,29 +1,48 @@
 from repo.db import db
 from repo.models import Instance
 from service.aws_monitor import verify_connection
+from util.logger import logger
 
-def register_instance(user_id, instance_id, instance_type, region):
+def register_instance(user_id, instance_id, instance_type, region, is_mock=False):
     """
     Register a new instance for a user.
-    Returns (success, result) where result is instance object or error message.
+    
+    Args:
+        user_id: UUID of the user
+        instance_id: AWS instance ID or mock instance identifier
+        instance_type: Instance type (e.g., t2.micro)
+        region: AWS region or 'mock' for mock instances
+        is_mock: Boolean indicating if this is a mock instance (default: False)
+    
+    Returns:
+        (success, instance_object or error_message)
     """
     # Check if instance already exists
     existing_instance = Instance.query.filter_by(instance_id=instance_id).first()
     if existing_instance:
         return False, "Instance already registered"
     
-    # Verify AWS connection
-    success, result = verify_connection(instance_id, region)
-    if not success:
-        return False, f"Failed to verify instance: {result}"
+    # For real instances, verify AWS connection
+    if not is_mock:
+        success, result = verify_connection(instance_id, region)
+        if not success:
+            return False, f"Failed to verify instance: {result}"
+        logger.info(f"Verified instance {instance_id} in AWS")
+    else:
+        logger.info(f"Registering mock instance {instance_id}")
     
-    # Create instance
+    # Create instance with default capacity values
     new_instance = Instance(
         instance_id=instance_id,
         instance_type=instance_type,
         region=region,
         user_id=user_id,
-        is_monitoring=False
+        is_monitoring=False,
+        is_mock=is_mock,
+        cpu_capacity=100.0,
+        memory_capacity=100.0,
+        network_capacity=100.0,
+        current_scale_level=1
     )
     
     try:

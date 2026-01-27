@@ -16,12 +16,13 @@ def create_instance(current_user):
     instance_id = data.get('instance_id')
     instance_type = data.get('instance_type')
     region = data.get('region')
+    is_mock = data.get('is_mock', False)  # Default to False for backward compatibility
     
     if not all([instance_id, instance_type, region]):
         return jsonify({'error': 'instance_id, instance_type, and region are required'}), 400
     
     user_id = current_user['user_id']
-    success, result = register_instance(user_id, instance_id, instance_type, region)
+    success, result = register_instance(user_id, instance_id, instance_type, region, is_mock)
     
     if success:
         return jsonify({
@@ -31,7 +32,12 @@ def create_instance(current_user):
                 'instance_id': result.instance_id,
                 'instance_type': result.instance_type,
                 'region': result.region,
-                'is_monitoring': result.is_monitoring
+                'is_monitoring': result.is_monitoring,
+                'is_mock': result.is_mock,
+                'cpu_capacity': result.cpu_capacity,
+                'memory_capacity': result.memory_capacity,
+                'network_capacity': result.network_capacity,
+                'current_scale_level': result.current_scale_level
             }
         }), 201
     else:
@@ -51,11 +57,16 @@ def get_instances(current_user):
             'instance_type': inst.instance_type,
             'region': inst.region,
             'is_monitoring': inst.is_monitoring,
+            'is_mock': inst.is_mock,
+            'cpu_capacity': inst.cpu_capacity,
+            'memory_capacity': inst.memory_capacity,
+            'network_capacity': inst.network_capacity,
+            'current_scale_level': inst.current_scale_level,
             'created_at': inst.created_at.isoformat()
         } for inst in instances]
     }), 200
 
-@instance_bp.route('/<instance_id>/monitor/start', methods=['POST'])
+@instance_bp.route('/<instance_id>/monitor/start', methods=['PATCH'])
 @token_required
 def start_instance_monitoring(current_user, instance_id):
     """Start monitoring for a specific instance."""
@@ -67,7 +78,7 @@ def start_instance_monitoring(current_user, instance_id):
     else:
         return jsonify({'error': message}), 400
 
-@instance_bp.route('/<instance_id>/monitor/stop', methods=['POST'])
+@instance_bp.route('/<instance_id>/monitor/stop', methods=['PATCH'])
 @token_required
 def stop_instance_monitoring(current_user, instance_id):
     """Stop monitoring for a specific instance."""

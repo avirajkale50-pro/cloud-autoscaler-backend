@@ -6,17 +6,18 @@
 1. `GET /api/` - Health check
 2. `POST /api/auth/register` - Register new user
 3. `POST /api/auth/login` - Login and get JWT token
+4. `GET /api/auth/me` - Get current user information
 
 ### Instance Management (Token Required)
-4. `POST /api/instances/` - Register AWS instance
-5. `GET /api/instances/` - Get all user instances
-6. `POST /api/instances/<instance_id>/monitor/start` - Start monitoring
-7. `POST /api/instances/<instance_id>/monitor/stop` - Stop monitoring
+5. `POST /api/instances/` - Register AWS instance or mock instance
+6. `GET /api/instances/` - Get all user instances
+7. `PATCH /api/instances/<instance_id>/monitor/start` - Start monitoring
+8. `PATCH /api/instances/<instance_id>/monitor/stop` - Stop monitoring
 
 ### Metrics & Decisions (Token Required)
-8. `GET /api/metrics/<instance_id>` - Get instance metrics
-9. `GET /api/metrics/decisions/<instance_id>` - Get scaling decisions
-10. `POST /api/metrics/simulate` - Simulate metrics for testing
+9. `GET /api/metrics/<instance_id>` - Get instance metrics
+10. `GET /api/metrics/decisions/<instance_id>` - Get scaling decisions
+11. `POST /api/metrics/simulate` - Simulate metrics for testing (instant or prolonged)
 
 ---
 
@@ -93,8 +94,7 @@
 ```json
 {
   "message": "Login successful",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user_id": "550e8400-e29b-41d4-a716-446655440000"
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
@@ -116,21 +116,69 @@
 
 ---
 
-### 4. Register Instance
+### 4. Get User Information
+**GET** `/api/auth/me`
+
+**Description:** Get current authenticated user's profile and statistics.
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Success Response (200 OK):**
+```json
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "user@example.com",
+  "created_at": "2026-01-22T05:16:25.123456",
+  "instance_count": 5,
+  "monitoring_count": 2
+}
+```
+
+**Error Responses:**
+
+*401 Unauthorized:*
+```json
+{
+  "error": "Token is missing"
+}
+```
+
+*401 Unauthorized - Expired:*
+```json
+{
+  "error": "Token has expired"
+}
+```
+
+---
+
+### 5. Register Instance
 **POST** `/api/instances/`
 
-**Description:** Register an AWS EC2 instance for monitoring.
+**Description:** Register an AWS EC2 instance or a mock instance for monitoring.
 
 **Headers:**
 - `Authorization: Bearer <token>`
 - `Content-Type: application/json`
 
-**Request Body:**
+**Request Body (Real AWS Instance):**
 ```json
 {
   "instance_id": "i-1234567890abcdef0",
   "instance_type": "t2.micro",
-  "region": "us-east-1"
+  "region": "us-east-1",
+  "is_mock": false
+}
+```
+
+**Request Body (Mock Instance):**
+```json
+{
+  "instance_id": "mock-instance-1",
+  "instance_type": "t2.micro",
+  "region": "mock",
+  "is_mock": true
 }
 ```
 
@@ -144,17 +192,27 @@
     "instance_type": "t2.micro",
     "region": "us-east-1",
     "is_monitoring": false,
-    "created_at": "2026-01-22T05:16:25.123456"
+    "is_mock": false,
+    "cpu_capacity": 100.0,
+    "memory_capacity": 100.0,
+    "network_capacity": 100.0,
+    "current_scale_level": 1
   }
 }
 ```
+
+**Notes:**
+- `is_mock` defaults to `false` if not provided
+- Mock instances generate metrics in the 40-50% utilization range
+- Mock instances don't require AWS CLI configuration
+- Capacity values start at 100.0 and change with scaling decisions
 
 **Error Responses:**
 
 *400 Bad Request:*
 ```json
 {
-  "error": "instance_id and region are required"
+  "error": "instance_id, instance_type, and region are required"
 }
 ```
 
@@ -174,7 +232,7 @@
 
 ---
 
-### 5. Get All Instances
+### 6. Get All Instances
 **GET** `/api/instances/`
 
 **Description:** Retrieve all instances registered by the authenticated user.
@@ -192,14 +250,24 @@
       "instance_type": "t2.micro",
       "region": "us-east-1",
       "is_monitoring": true,
+      "is_mock": false,
+      "cpu_capacity": 150.0,
+      "memory_capacity": 150.0,
+      "network_capacity": 150.0,
+      "current_scale_level": 2,
       "created_at": "2026-01-22T05:16:25.123456"
     },
     {
       "id": "770e8400-e29b-41d4-a716-446655440002",
-      "instance_id": "i-0987654321fedcba0",
+      "instance_id": "mock-instance-1",
       "instance_type": "t2.small",
-      "region": "us-west-2",
+      "region": "mock",
       "is_monitoring": false,
+      "is_mock": true,
+      "cpu_capacity": 100.0,
+      "memory_capacity": 100.0,
+      "network_capacity": 100.0,
+      "current_scale_level": 1,
       "created_at": "2026-01-22T06:30:15.654321"
     }
   ]
@@ -208,8 +276,8 @@
 
 ---
 
-### 6. Start Monitoring
-**POST** `/api/instances/<instance_id>/monitor/start`
+### 7. Start Monitoring
+**PATCH** `/api/instances/<instance_id>/monitor/start`
 
 **Description:** Start monitoring an instance. Metrics will be collected every 30 seconds, and scaling decisions will be made every 15 seconds.
 
@@ -219,7 +287,7 @@
 **Success Response (200 OK):**
 ```json
 {
-  "message": "Monitoring started for instance i-1234567890abcdef0"
+  "message": "Monitoring started successfully"
 }
 ```
 
@@ -242,14 +310,14 @@
 *400 Bad Request:*
 ```json
 {
-  "error": "Instance is already being monitored"
+  "error": "Monitoring is already active for this instance"
 }
 ```
 
 ---
 
-### 7. Stop Monitoring
-**POST** `/api/instances/<instance_id>/monitor/stop`
+### 8. Stop Monitoring
+**PATCH** `/api/instances/<instance_id>/monitor/stop`
 
 **Description:** Stop monitoring an instance.
 
@@ -259,7 +327,7 @@
 **Success Response (200 OK):**
 ```json
 {
-  "message": "Monitoring stopped for instance i-1234567890abcdef0"
+  "message": "Monitoring stopped successfully"
 }
 ```
 
@@ -281,7 +349,7 @@
 
 ---
 
-### 8. Get Instance Metrics
+### 9. Get Instance Metrics
 **GET** `/api/metrics/<instance_id>?limit=50`
 
 **Description:** Retrieve metrics for a specific instance.
@@ -339,7 +407,7 @@
 
 ---
 
-### 9. Get Scaling Decisions
+### 10. Get Scaling Decisions
 **GET** `/api/metrics/decisions/<instance_id>?limit=20`
 
 **Description:** Retrieve scaling decisions for a specific instance.
@@ -363,7 +431,7 @@
       "network_in": 2048000,
       "network_out": 1024000,
       "decision": "scale_up",
-      "reason": "Immediate scale up: CPU utilization (92.50%) exceeds 90% threshold"
+      "reason": "Sustained scale up: CPU > 90% for 85.0% of last 5 minutes (Current: 92.50%)"
     },
     {
       "id": "bb0e8400-e29b-41d4-a716-446655440006",
@@ -373,17 +441,17 @@
       "network_in": 1024000,
       "network_out": 512000,
       "decision": "no_action",
-      "reason": "CPU utilization (45.20%) is within acceptable IQR range (30.50% - 65.80%)"
+      "reason": "All metrics within acceptable range. Current: CPU: 45.20%, Memory: 62.80%"
     },
     {
       "id": "cc0e8400-e29b-41d4-a716-446655440007",
       "timestamp": "2026-01-22T05:20:30.987654",
       "cpu_utilization": 8.3,
-      "memory_usage": 55.1,
+      "memory_usage": 15.1,
       "network_in": 512000,
       "network_out": 256000,
       "decision": "scale_down",
-      "reason": "Immediate scale down: CPU utilization (8.30%) is below 10% threshold"
+      "reason": "Sustained scale down: CPU < 10% AND Memory < 20% for 90.0% of last 5 minutes (Current: CPU=8.30%, Memory=15.10%)"
     }
   ]
 }
@@ -407,16 +475,16 @@
 
 ---
 
-### 10. Simulate Metrics
+### 11. Simulate Metrics
 **POST** `/api/metrics/simulate`
 
-**Description:** Create simulated metrics for testing the autoscaling system. This is useful for testing scaling decisions without waiting for real AWS metrics.
+**Description:** Create simulated metrics for testing the autoscaling system. Supports both instant simulation (single metric) and prolonged simulation (multiple metrics over time).
 
 **Headers:**
 - `Authorization: Bearer <token>`
 - `Content-Type: application/json`
 
-**Request Body:**
+**Request Body (Instant Simulation):**
 ```json
 {
   "instance_id": "i-1234567890abcdef0",
@@ -427,7 +495,29 @@
 }
 ```
 
-**Success Response (201 Created):**
+**Request Body (Prolonged Simulation):**
+```json
+{
+  "instance_id": "i-1234567890abcdef0",
+  "cpu_utilization": 95.5,
+  "memory_usage": 70.2,
+  "network_in": 3072000,
+  "network_out": 1536000,
+  "duration_minutes": 10,
+  "interval_seconds": 30
+}
+```
+
+**Parameters:**
+- `instance_id` (required): Instance to simulate metrics for
+- `cpu_utilization` (optional): CPU percentage (0-100)
+- `memory_usage` (optional): Memory percentage (0-100)
+- `network_in` (optional): Network in bytes
+- `network_out` (optional): Network out bytes
+- `duration_minutes` (optional): Duration for prolonged simulation
+- `interval_seconds` (optional, default=30): Interval between metrics
+
+**Success Response - Instant (201 Created):**
 ```json
 {
   "message": "Simulated metric created successfully",
@@ -442,6 +532,33 @@
     "is_outlier": false,
     "outlier_type": null
   }
+}
+```
+
+**Success Response - Prolonged (201 Created):**
+```json
+{
+  "message": "Created 20 simulated metrics over 10 minutes",
+  "metrics_created": 20,
+  "duration_minutes": 10,
+  "interval_seconds": 30,
+  "sample_metrics": [
+    {
+      "timestamp": "2026-01-22T05:12:15.123456",
+      "cpu_utilization": 95.5,
+      "memory_usage": 70.2
+    },
+    {
+      "timestamp": "2026-01-22T05:12:45.123456",
+      "cpu_utilization": 95.5,
+      "memory_usage": 70.2
+    },
+    {
+      "timestamp": "2026-01-22T05:13:15.123456",
+      "cpu_utilization": 95.5,
+      "memory_usage": 70.2
+    }
+  ]
 }
 ```
 
@@ -479,33 +596,80 @@
 
 ## Scaling Decision Logic
 
-The system uses a three-tier decision logic:
+The system uses a three-tier decision logic with **sustained usage checks**:
 
-### Priority 1: Immediate Scale Down
-- **Trigger:** CPU utilization < 10%
-- **Action:** Scale down immediately
+### Priority 1: Sustained Scale Down
+- **Trigger:** CPU < 10% **AND** Memory < 20% for **80%+ of last 5 minutes**
+- **Action:** Scale down and update capacity
+- **Capacity Change:** Decrease by 33% (multiply by 0.67)
+- **Scale Level:** Decremented by 1
 - **Flag:** Metric is marked as outlier with type `scale_down`
 
-### Priority 2: Immediate Scale Up
-- **Trigger:** CPU utilization > 90%
-- **Action:** Scale up immediately
+### Priority 2: Sustained Scale Up
+- **Trigger:** CPU > 90% **OR** Memory > 90% for **80%+ of last 5 minutes**
+- **Action:** Scale up and update capacity
+- **Capacity Change:** Increase by 50% (multiply by 1.5)
+- **Scale Level:** Incremented by 1
 - **Flag:** Metric is marked as outlier with type `scale_up`
 
 ### Priority 3: IQR-Based Outlier Detection
-For normal conditions (10% ≤ CPU ≤ 90%), the system uses the Interquartile Range (IQR) method:
+For normal conditions (not meeting sustained thresholds), the system uses the Interquartile Range (IQR) method:
 
-1. Collect CPU values from the last 5 minutes (excluding flagged outliers)
-2. Calculate Q1 (25th percentile) and Q3 (75th percentile)
+1. Collect metrics from the last 5 minutes (excluding flagged outliers)
+2. Calculate Q1 (25th percentile) and Q3 (75th percentile) for each metric
 3. Calculate IQR = Q3 - Q1
 4. Determine bounds:
    - Lower bound = Q1 - 1.5 × IQR
    - Upper bound = Q3 + 1.5 × IQR
-5. Make decision:
-   - **Scale up** if current CPU > upper bound
-   - **Scale down** if current CPU < lower bound
-   - **No action** if within bounds
+5. Voting system:
+   - CPU and Memory: 2 votes each
+   - Network In/Out: 1 vote each
+6. Make decision:
+   - **Scale up** if total scale-up votes ≥ 2
+   - **Scale down** if total scale-down votes ≥ 2
+   - **No action** otherwise
 
-**Important:** Metrics flagged as outliers (from immediate thresholds) are excluded from future mean calculations to prevent skewing the baseline.
+**Important Notes:**
+- Sustained usage requires 80% of metrics in the 5-minute window to meet the threshold
+- Metrics flagged as outliers are excluded from future IQR calculations
+- Capacity tracking allows monitoring of instance resource changes over time
+
+---
+
+## Instance Capacity Tracking
+
+Each instance tracks its current capacity across three dimensions:
+
+| Field | Description | Initial Value | Scale Up | Scale Down |
+|-------|-------------|---------------|----------|------------|
+| `cpu_capacity` | CPU processing capacity (%) | 100.0 | ×1.5 | ×0.67 |
+| `memory_capacity` | Memory capacity (%) | 100.0 | ×1.5 | ×0.67 |
+| `network_capacity` | Network bandwidth capacity (%) | 100.0 | ×1.5 | ×0.67 |
+| `current_scale_level` | Number of scale operations | 1 | +1 | -1 |
+
+**Example Progression:**
+- Initial: Level 1, Capacity 100%
+- After scale up: Level 2, Capacity 150%
+- After another scale up: Level 3, Capacity 225%
+- After scale down: Level 2, Capacity 150%
+
+---
+
+## Mock Instances
+
+Mock instances allow testing without AWS CLI configuration:
+
+**Benefits:**
+- No AWS credentials required
+- Consistent metrics in 40-50% utilization range
+- Perfect for demos and development
+- Same API interface as real instances
+
+**Usage:**
+1. Register with `"is_mock": true`
+2. Start monitoring as normal
+3. Metrics are auto-generated every 30 seconds
+4. Scaling decisions work identically to real instances
 
 ---
 
@@ -522,8 +686,8 @@ The `metrics` table includes the following columns:
 | `memory_usage` | Float | Memory usage percentage (0-100) |
 | `network_in` | BigInteger | Network bytes in |
 | `network_out` | BigInteger | Network bytes out |
-| `is_outlier` | Boolean | Whether this metric triggered immediate scaling |
-| `outlier_type` | String | Type of outlier: 'scale_up', 'scale_down', or null |
+| `is_outlier` | Boolean | Whether this metric triggered scaling |
+| `outlier_type` | String | Type: 'scale_up', 'scale_down', or null |
 
 ---
 
@@ -533,29 +697,43 @@ The `metrics` table includes the following columns:
 1. Register a user: `POST /api/auth/register`
 2. Login: `POST /api/auth/login`
 3. Copy the token from the response
+4. Get user info: `GET /api/auth/me` (with token)
 
-### Step 2: Register Instance
-1. Register an instance: `POST /api/instances/`
-2. Use the token in the Authorization header
+### Step 2: Register Mock Instance (No AWS Required)
+1. Register a mock instance: `POST /api/instances/`
+   ```json
+   {
+     "instance_id": "mock-test-1",
+     "instance_type": "t2.micro",
+     "region": "mock",
+     "is_mock": true
+   }
+   ```
+2. Start monitoring: `PATCH /api/instances/mock-test-1/monitor/start`
+3. Wait 30 seconds for metrics to be generated
 
-### Step 3: Test Simulate Endpoint
-1. Create a normal metric: `POST /api/metrics/simulate`
+### Step 3: Test Prolonged Simulation
+1. Simulate sustained high CPU for 10 minutes:
    ```json
-   {"instance_id": "i-xxx", "cpu_utilization": 50.0}
+   {
+     "instance_id": "mock-test-1",
+     "cpu_utilization": 95.0,
+     "memory_usage": 50.0,
+     "duration_minutes": 10,
+     "interval_seconds": 30
+   }
    ```
-2. Create a high CPU metric: `POST /api/metrics/simulate`
-   ```json
-   {"instance_id": "i-xxx", "cpu_utilization": 95.0}
-   ```
-3. Create a low CPU metric: `POST /api/metrics/simulate`
-   ```json
-   {"instance_id": "i-xxx", "cpu_utilization": 5.0}
-   ```
+2. Wait 15 seconds for scaling decision
+3. Check decisions: `GET /api/metrics/decisions/mock-test-1`
+4. Verify scale-up decision was made
+5. Check instance: `GET /api/instances/`
+6. Verify capacity increased to 150%
 
 ### Step 4: Check Results
-1. View metrics: `GET /api/metrics/<instance_id>`
-2. View scaling decisions: `GET /api/metrics/decisions/<instance_id>`
-3. Verify that high/low CPU metrics are flagged as outliers
+1. View metrics: `GET /api/metrics/mock-test-1`
+2. View scaling decisions: `GET /api/metrics/decisions/mock-test-1`
+3. Verify sustained usage triggered scaling
+4. Check capacity changes in instance details
 
 ---
 
@@ -566,4 +744,7 @@ The `metrics` table includes the following columns:
 - **Metrics Collection:** Every 30 seconds (only for monitored instances)
 - **Scaling Decisions:** Every 15 seconds (only for monitored instances)
 - **Base URL:** `http://localhost:5000`
-- **Outlier Exclusion:** Flagged metrics are excluded from future mean calculations
+- **Sustained Usage:** Requires 80% of metrics in 5-minute window
+- **Mock Instances:** Generate metrics in 40-50% range automatically
+- **Capacity Tracking:** Updates automatically with scaling decisions
+- **HTTP Methods:** Start/Stop monitoring use PATCH (not POST)

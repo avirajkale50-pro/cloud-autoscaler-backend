@@ -7,7 +7,9 @@ from repo.db import db
 from dotenv import load_dotenv
 import os
 from flask_apscheduler import APScheduler
+from flask_swagger_ui import get_swaggerui_blueprint
 from service.aws_monitor import fetch_instance_metrics
+from service.mock_monitor import generate_mock_metrics
 from service.scaling_service import process_all_monitored_instances
 from repo.models import Instance, Metric
 from util.logger import logger
@@ -31,7 +33,13 @@ def fetch_metrics_job(app):
         
         for instance in instances:
             logger.info(f"Fetching metrics for {instance.instance_id}...")
-            metrics_data = fetch_instance_metrics(instance.instance_id, instance.region)
+            
+            # Use mock data for mock instances, real AWS data for regular instances
+            if instance.is_mock:
+                logger.info(f"Using mock data for {instance.instance_id}")
+                metrics_data = generate_mock_metrics(instance.instance_id)
+            else:
+                metrics_data = fetch_instance_metrics(instance.instance_id, instance.region)
             
             if metrics_data:
                 # Check if we got at least one metric
@@ -120,6 +128,20 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(instance_bp, url_prefix='/api/instances')
     app.register_blueprint(metrics_bp, url_prefix='/api/metrics')
+    
+    # Swagger UI configuration
+    SWAGGER_URL = '/api/docs'
+    API_URL = '/static/swagger.yaml'
+    swaggerui_blueprint = get_swaggerui_blueprint(
+        SWAGGER_URL,
+        API_URL,
+        config={
+            'app_name': "Cloud Resource Autoscaler API",
+            'docExpansion': 'list',
+            'defaultModelsExpandDepth': 3
+        }
+    )
+    app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
     
     with app.app_context():
         # Import models to ensure they are registered with SQLAlchemy

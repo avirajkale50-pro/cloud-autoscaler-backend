@@ -1,0 +1,689 @@
+openapi: 3.0.0
+info:
+  title: Cloud Resource Autoscaler API
+  description: |
+    API for monitoring and auto-scaling cloud resources based on metrics.
+    
+    ## Features
+    - Mock instances for testing without AWS
+    - Time-based scaling with 5-minute sustained usage checks
+    - Instance capacity tracking
+    - Prolonged metric simulation
+    
+    ## Authentication
+    Most endpoints require a JWT token obtained from the login endpoint.
+    Use the "Authorize" button to set your Bearer token.
+  version: 2.0.0
+  contact:
+    name: API Support
+    
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: User registration and authentication
+  - name: Instances
+    description: Instance management and monitoring
+  - name: Metrics
+    description: Metrics and scaling decisions
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      
+  schemas:
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+        instance_count:
+          type: integer
+        monitoring_count:
+          type: integer
+          
+    Instance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        instance_id:
+          type: string
+        instance_type:
+          type: string
+        region:
+          type: string
+        is_monitoring:
+          type: boolean
+        is_mock:
+          type: boolean
+        cpu_capacity:
+          type: number
+          format: float
+        memory_capacity:
+          type: number
+          format: float
+        network_capacity:
+          type: number
+          format: float
+        current_scale_level:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+          
+    Metric:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        instance_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        cpu_utilization:
+          type: number
+          format: float
+          nullable: true
+        memory_usage:
+          type: number
+          format: float
+          nullable: true
+        network_in:
+          type: integer
+          format: int64
+          nullable: true
+        network_out:
+          type: integer
+          format: int64
+          nullable: true
+        is_outlier:
+          type: boolean
+        outlier_type:
+          type: string
+          nullable: true
+          enum: [scale_up, scale_down, null]
+          
+    ScalingDecision:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        instance_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        cpu_utilization:
+          type: number
+          format: float
+          nullable: true
+        memory_usage:
+          type: number
+          format: float
+          nullable: true
+        network_in:
+          type: integer
+          format: int64
+          nullable: true
+        network_out:
+          type: integer
+          format: int64
+          nullable: true
+        decision:
+          type: string
+          enum: [scale_up, scale_down, no_action]
+        reason:
+          type: string
+          
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /api/:
+    get:
+      tags:
+        - Authentication
+      summary: Health check
+      description: Check if the API is running
+      responses:
+        '200':
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  version:
+                    type: string
+                    
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Create a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user_id:
+                    type: string
+                    format: uuid
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login
+      description: Authenticate and receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  token:
+                    type: string
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get user information
+      description: Get current authenticated user's profile and statistics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/instances/:
+    post:
+      tags:
+        - Instances
+      summary: Register instance
+      description: Register an AWS EC2 instance or mock instance for monitoring
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - instance_id
+                - instance_type
+                - region
+              properties:
+                instance_id:
+                  type: string
+                  description: AWS instance ID or mock identifier
+                instance_type:
+                  type: string
+                  description: Instance type (e.g., t2.micro)
+                region:
+                  type: string
+                  description: AWS region or 'mock'
+                is_mock:
+                  type: boolean
+                  default: false
+                  description: Set to true for mock instances (no AWS required)
+      responses:
+        '201':
+          description: Instance registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  instance:
+                    $ref: '#/components/schemas/Instance'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+    get:
+      tags:
+        - Instances
+      summary: Get all instances
+      description: Retrieve all instances registered by the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of instances
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instances:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Instance'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/instances/{instance_id}/monitor/start:
+    patch:
+      tags:
+        - Instances
+      summary: Start monitoring
+      description: Start monitoring an instance (metrics every 30s, decisions every 15s)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Monitoring started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/instances/{instance_id}/monitor/stop:
+    patch:
+      tags:
+        - Instances
+      summary: Stop monitoring
+      description: Stop monitoring an instance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Monitoring stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/metrics/{instance_id}:
+    get:
+      tags:
+        - Metrics
+      summary: Get instance metrics
+      description: Retrieve metrics for a specific instance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+          description: Maximum number of metrics to return
+      responses:
+        '200':
+          description: Metrics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance_id:
+                    type: string
+                  metrics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Metric'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/metrics/decisions/{instance_id}:
+    get:
+      tags:
+        - Metrics
+      summary: Get scaling decisions
+      description: Retrieve scaling decisions for a specific instance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Maximum number of decisions to return
+      responses:
+        '200':
+          description: Decisions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instance_id:
+                    type: string
+                  decisions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScalingDecision'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/metrics/simulate:
+    post:
+      tags:
+        - Metrics
+      summary: Simulate metrics
+      description: |
+        Create simulated metrics for testing. Supports two modes:
+        1. **Instant**: Single metric with provided values
+        2. **Prolonged**: Multiple metrics over duration (for testing sustained usage)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - instance_id
+              properties:
+                instance_id:
+                  type: string
+                cpu_utilization:
+                  type: number
+                  format: float
+                  minimum: 0
+                  maximum: 100
+                memory_usage:
+                  type: number
+                  format: float
+                  minimum: 0
+                  maximum: 100
+                network_in:
+                  type: integer
+                  format: int64
+                network_out:
+                  type: integer
+                  format: int64
+                duration_minutes:
+                  type: integer
+                  description: Duration for prolonged simulation (optional)
+                interval_seconds:
+                  type: integer
+                  default: 30
+                  description: Interval between metrics for prolonged simulation
+            examples:
+              instant:
+                summary: Instant simulation
+                value:
+                  instance_id: "i-1234567890abcdef0"
+                  cpu_utilization: 95.5
+                  memory_usage: 70.2
+              prolonged:
+                summary: Prolonged simulation (10 minutes)
+                value:
+                  instance_id: "i-1234567890abcdef0"
+                  cpu_utilization: 95.5
+                  memory_usage: 70.2
+                  duration_minutes: 10
+                  interval_seconds: 30
+      responses:
+        '201':
+          description: Metrics created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                      metric:
+                        $ref: '#/components/schemas/Metric'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                      metrics_created:
+                        type: integer
+                      duration_minutes:
+                        type: integer
+                      interval_seconds:
+                        type: integer
+                      sample_metrics:
+                        type: array
+                        items:
+                          type: object
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

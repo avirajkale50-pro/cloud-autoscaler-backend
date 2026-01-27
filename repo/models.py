@@ -27,6 +27,15 @@ class Instance(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), nullable=False)
     is_monitoring = db.Column(db.Boolean, default=False)
+    
+    # Mock instance support - generate data without AWS CLI
+    is_mock = db.Column(db.Boolean, default=False)
+    
+    # Capacity tracking - changes with scaling decisions
+    cpu_capacity = db.Column(db.Float, default=100.0)  # percentage capacity
+    memory_capacity = db.Column(db.Float, default=100.0)  # percentage capacity
+    network_capacity = db.Column(db.Float, default=100.0)  # percentage capacity
+    current_scale_level = db.Column(db.Integer, default=1)  # tracks scale ups/downs
 
     
     metrics = db.relationship('Metric', backref='instance', lazy=True)

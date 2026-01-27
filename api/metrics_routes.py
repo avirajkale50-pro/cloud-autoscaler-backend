@@ -76,18 +76,33 @@ def get_scaling_decisions(current_user, instance_id):
 @metrics_bp.route('/simulate', methods=['POST'])
 @token_required
 def simulate_metrics(current_user):
-    """Simulate metrics for testing purposes."""
+    """
+    Simulate metrics for testing purposes.
+    
+    Supports two modes:
+    1. Instant simulation: Create a single metric with provided values
+    2. Prolonged simulation: Create multiple metrics over a duration with specified interval
+    
+    Parameters:
+        - instance_id (required): Instance to simulate metrics for
+        - cpu_utilization (optional): CPU percentage
+        - memory_usage (optional): Memory percentage
+        - network_in (optional): Network in bytes
+        - network_out (optional): Network out bytes
+        - duration_minutes (optional): Duration in minutes for prolonged simulation
+        - interval_seconds (optional): Interval between metrics in seconds (default: 30)
+    """
     from repo.db import db
+    from datetime import datetime, timedelta
+    import time
     
     user_id = current_user['user_id']
     data = request.get_json()
-    
 
     if not data or 'instance_id' not in data:
         return jsonify({'error': 'instance_id is required'}), 400
     
     instance_id = data['instance_id']
-    
 
     instance = Instance.query.filter_by(instance_id=instance_id).first()
     if not instance:
@@ -96,33 +111,77 @@ def simulate_metrics(current_user):
     if str(instance.user_id) != str(user_id):
         return jsonify({'error': 'Unauthorized: You don\'t own this instance'}), 403
     
-    # stimulated data
-    metric = Metric(
-        instance_id=instance_id,
-        cpu_utilization=data.get('cpu_utilization'),
-        memory_usage=data.get('memory_usage'),
-        network_in=data.get('network_in'),
-        network_out=data.get('network_out')
-    )
+    # Get simulation parameters
+    cpu_utilization = data.get('cpu_utilization')
+    memory_usage = data.get('memory_usage')
+    network_in = data.get('network_in')
+    network_out = data.get('network_out')
+    duration_minutes = data.get('duration_minutes')
+    interval_seconds = data.get('interval_seconds', 30)
+    
+    created_metrics = []
     
     try:
-        db.session.add(metric)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Simulated metric created successfully',
-            'metric': {
-                'id': str(metric.id),
-                'instance_id': metric.instance_id,
-                'timestamp': metric.timestamp.isoformat(),
-                'cpu_utilization': metric.cpu_utilization,
-                'memory_usage': metric.memory_usage,
-                'network_in': metric.network_in,
-                'network_out': metric.network_out,
-                'is_outlier': metric.is_outlier,
-                'outlier_type': metric.outlier_type
-            }
-        }), 201
+        if duration_minutes:
+            # Prolonged simulation mode
+            num_metrics = int((duration_minutes * 60) / interval_seconds)
+            start_time = datetime.utcnow()
+            
+            for i in range(num_metrics):
+                # Calculate timestamp for this metric (backdated)
+                metric_timestamp = start_time - timedelta(seconds=(num_metrics - i - 1) * interval_seconds)
+                
+                metric = Metric(
+                    instance_id=instance_id,
+                    cpu_utilization=cpu_utilization,
+                    memory_usage=memory_usage,
+                    network_in=network_in,
+                    network_out=network_out,
+                    timestamp=metric_timestamp
+                )
+                db.session.add(metric)
+                created_metrics.append({
+                    'timestamp': metric_timestamp.isoformat(),
+                    'cpu_utilization': cpu_utilization,
+                    'memory_usage': memory_usage
+                })
+            
+            db.session.commit()
+            
+            return jsonify({
+                'message': f'Created {num_metrics} simulated metrics over {duration_minutes} minutes',
+                'metrics_created': num_metrics,
+                'duration_minutes': duration_minutes,
+                'interval_seconds': interval_seconds,
+                'sample_metrics': created_metrics[:3]  # Show first 3 as sample
+            }), 201
+        else:
+            # Instant simulation mode (single metric)
+            metric = Metric(
+                instance_id=instance_id,
+                cpu_utilization=cpu_utilization,
+                memory_usage=memory_usage,
+                network_in=network_in,
+                network_out=network_out
+            )
+            
+            db.session.add(metric)
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'Simulated metric created successfully',
+                'metric': {
+                    'id': str(metric.id),
+                    'instance_id': metric.instance_id,
+                    'timestamp': metric.timestamp.isoformat(),
+                    'cpu_utilization': metric.cpu_utilization,
+                    'memory_usage': metric.memory_usage,
+                    'network_in': metric.network_in,
+                    'network_out': metric.network_out,
+                    'is_outlier': metric.is_outlier,
+                    'outlier_type': metric.outlier_type
+                }
+            }), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create metric: {str(e)}'}), 500
