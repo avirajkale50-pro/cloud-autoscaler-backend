@@ -124,7 +124,7 @@ def create_app():
             func=scaling_decision_job,
             args=[app],
             trigger='interval',
-            seconds=15
+            seconds=60
         )
         
         logger.info("Scheduler initialized successfully")
