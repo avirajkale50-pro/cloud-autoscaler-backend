@@ -103,7 +103,9 @@ def create_app():
     db.init_app(app)
     
     # Initialize Scheduler
-    if not scheduler.running:
+    # Only run scheduler in the main process, not in the reloader process
+    # This prevents duplicate job executions when debug=True
+    if not scheduler.running and os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         scheduler.init_app(app)
         scheduler.start()
         
@@ -124,6 +126,8 @@ def create_app():
             trigger='interval',
             seconds=15
         )
+        
+        logger.info("Scheduler initialized successfully")
     
     # Register Blueprints
     app.register_blueprint(api_bp, url_prefix='/api')
