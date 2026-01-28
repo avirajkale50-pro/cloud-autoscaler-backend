@@ -243,11 +243,15 @@ def make_scaling_decision(instance_id):
                     q1 = network_in_values[n // 4]
                     q3 = network_in_values[(3 * n) // 4]
                     iqr = q3 - q1
+                    net_in_lower = q1 - 1.5 * iqr
                     net_in_upper = q3 + 1.5 * iqr
                     
                     if current_network_in > net_in_upper:
                         scale_up_votes += 1  # Network gets lower weight
                         reasons_list.append(f"Network In ({current_network_in:,} bytes) > upper bound ({net_in_upper:,.0f} bytes)")
+                    elif current_network_in < net_in_lower:
+                        scale_down_votes += 1
+                        reasons_list.append(f"Network In ({current_network_in:,} bytes) < lower bound ({net_in_lower:,.0f} bytes)")
             
             # Network Out Analysis
             if current_network_out is not None:
@@ -257,11 +261,15 @@ def make_scaling_decision(instance_id):
                     q1 = network_out_values[n // 4]
                     q3 = network_out_values[(3 * n) // 4]
                     iqr = q3 - q1
+                    net_out_lower = q1 - 1.5 * iqr
                     net_out_upper = q3 + 1.5 * iqr
                     
                     if current_network_out > net_out_upper:
                         scale_up_votes += 1  # Network gets lower weight
                         reasons_list.append(f"Network Out ({current_network_out:,} bytes) > upper bound ({net_out_upper:,.0f} bytes)")
+                    elif current_network_out < net_out_lower:
+                        scale_down_votes += 1
+                        reasons_list.append(f"Network Out ({current_network_out:,} bytes) < lower bound ({net_out_lower:,.0f} bytes)")
             
             # Make decision based on votes (need at least 2 votes to trigger scaling)
             if scale_up_votes >= 2:
