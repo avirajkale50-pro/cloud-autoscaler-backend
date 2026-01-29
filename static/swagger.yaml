@@ -532,7 +532,13 @@ paths:
       tags:
         - Metrics
       summary: Get instance metrics
-      description: Retrieve metrics for a specific instance
+      description: |
+        Retrieve metrics for a specific instance with pagination support.
+        
+        **Pagination**: Use `page` and `page_size` parameters to fetch data in chunks.
+        The response includes pagination metadata to help with navigation.
+        
+        **Backward Compatibility**: The legacy `limit` parameter is still supported.
       security:
         - BearerAuth: []
       parameters:
@@ -541,12 +547,28 @@ paths:
           required: true
           schema:
             type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number (1-indexed)
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of items per page (max 100)
         - name: limit
           in: query
           schema:
             type: integer
-            default: 100
-          description: Maximum number of metrics to return
+            minimum: 1
+            maximum: 100
+          description: (Legacy) Maximum number of metrics to return. Overrides page_size and resets to page 1.
       responses:
         '200':
           description: Metrics retrieved
@@ -561,6 +583,62 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Metric'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                        description: Current page number
+                      page_size:
+                        type: integer
+                        description: Number of items per page
+                      total_count:
+                        type: integer
+                        description: Total number of metrics available
+                      total_pages:
+                        type: integer
+                        description: Total number of pages
+                      has_next:
+                        type: boolean
+                        description: Whether there is a next page
+                      has_prev:
+                        type: boolean
+                        description: Whether there is a previous page
+              examples:
+                paginated_response:
+                  summary: Paginated metrics response
+                  value:
+                    instance_id: "i-1234567890abcdef0"
+                    metrics:
+                      - id: "123e4567-e89b-12d3-a456-426614174000"
+                        instance_id: "i-1234567890abcdef0"
+                        timestamp: "2026-01-29T09:30:00Z"
+                        cpu_utilization: 45.5
+                        memory_usage: 60.2
+                        network_in: 1024000
+                        network_out: 512000
+                        is_outlier: false
+                        outlier_type: null
+                    pagination:
+                      page: 1
+                      page_size: 10
+                      total_count: 150
+                      total_pages: 15
+                      has_next: true
+                      has_prev: false
+        '400':
+          description: Bad request (invalid pagination parameters)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_page:
+                  value:
+                    error: "Page must be >= 1"
+                invalid_page_size:
+                  value:
+                    error: "Page size must be between 1 and 100"
         '401':
           description: Unauthorized
           content:
@@ -585,7 +663,13 @@ paths:
       tags:
         - Metrics
       summary: Get scaling decisions
-      description: Retrieve scaling decisions for a specific instance
+      description: |
+        Retrieve scaling decisions for a specific instance with pagination support.
+        
+        **Pagination**: Use `page` and `page_size` parameters to fetch data in chunks.
+        The response includes pagination metadata to help with navigation.
+        
+        **Backward Compatibility**: The legacy `limit` parameter is still supported.
       security:
         - BearerAuth: []
       parameters:
@@ -594,12 +678,28 @@ paths:
           required: true
           schema:
             type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number (1-indexed)
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of items per page (max 100)
         - name: limit
           in: query
           schema:
             type: integer
-            default: 50
-          description: Maximum number of decisions to return
+            minimum: 1
+            maximum: 100
+          description: (Legacy) Maximum number of decisions to return. Overrides page_size and resets to page 1.
       responses:
         '200':
           description: Decisions retrieved
@@ -614,6 +714,62 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ScalingDecision'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                        description: Current page number
+                      page_size:
+                        type: integer
+                        description: Number of items per page
+                      total_count:
+                        type: integer
+                        description: Total number of decisions available
+                      total_pages:
+                        type: integer
+                        description: Total number of pages
+                      has_next:
+                        type: boolean
+                        description: Whether there is a next page
+                      has_prev:
+                        type: boolean
+                        description: Whether there is a previous page
+              examples:
+                paginated_response:
+                  summary: Paginated decisions response
+                  value:
+                    instance_id: "i-1234567890abcdef0"
+                    decisions:
+                      - id: "456e7890-e89b-12d3-a456-426614174001"
+                        instance_id: "i-1234567890abcdef0"
+                        timestamp: "2026-01-29T09:30:00Z"
+                        cpu_utilization: 85.5
+                        memory_usage: 78.2
+                        network_in: 2048000
+                        network_out: 1024000
+                        decision: "scale_up"
+                        reason: "High sustained CPU usage over 5 minutes"
+                    pagination:
+                      page: 1
+                      page_size: 10
+                      total_count: 75
+                      total_pages: 8
+                      has_next: true
+                      has_prev: false
+        '400':
+          description: Bad request (invalid pagination parameters)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_page:
+                  value:
+                    error: "Page must be >= 1"
+                invalid_page_size:
+                  value:
+                    error: "Page size must be between 1 and 100"
         '401':
           description: Unauthorized
           content:

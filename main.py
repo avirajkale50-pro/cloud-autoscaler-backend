@@ -3,6 +3,7 @@ from api.routes import api_bp
 from api.auth_routes import auth_bp
 from api.instance_routes import instance_bp
 from api.metrics_routes import metrics_bp
+from api.middleware import register_middleware
 from flask_cors import CORS
 from repo.db import db
 from dotenv import load_dotenv
@@ -101,6 +102,9 @@ def create_app():
     
     # Initialize Database
     db.init_app(app)
+    
+    # Register Middleware (must be done before registering blueprints)
+    register_middleware(app)
     
     # Initialize Scheduler
     # Only run scheduler in the main process, not in the reloader process

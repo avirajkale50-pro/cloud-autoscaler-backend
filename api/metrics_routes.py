@@ -7,7 +7,14 @@ metrics_bp = Blueprint('metrics', __name__)
 @metrics_bp.route('/<instance_id>', methods=['GET'])
 @token_required
 def get_instance_metrics(current_user, instance_id):
-    """Get metrics for a specific instance."""
+    """
+    Get metrics for a specific instance with pagination support.
+    
+    Query Parameters:
+        - page (int, optional): Page number (1-indexed, default: 1)
+        - page_size (int, optional): Number of items per page (default: 10, max: 100)
+        - limit (int, optional): Legacy parameter for backward compatibility (overrides page_size)
+    """
     user_id = current_user['user_id']
     
     # Verify the instance who is the owner
@@ -18,12 +25,38 @@ def get_instance_metrics(current_user, instance_id):
     if str(instance.user_id) != str(user_id):
         return jsonify({'error': 'Unauthorized: You don\'t own this instance'}), 403
     
-    # Get metrics
-    limit = request.args.get('limit', 100, type=int)
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 10, type=int)
+    
+    # Support legacy 'limit' parameter for backward compatibility
+    if 'limit' in request.args:
+        page_size = request.args.get('limit', 10, type=int)
+        page = 1  # Reset to first page when using limit
+    
+    # Validate pagination parameters
+    if page < 1:
+        return jsonify({'error': 'Page must be >= 1'}), 400
+    if page_size < 1 or page_size > 100:
+        return jsonify({'error': 'Page size must be between 1 and 100'}), 400
+    
+    # Calculate offset
+    offset = (page - 1) * page_size
+    
+    # Get total count
+    total_count = Metric.query.filter_by(instance_id=instance_id).count()
+    
+    # Get metrics with pagination
     metrics = Metric.query.filter_by(instance_id=instance_id)\
         .order_by(Metric.timestamp.desc())\
-        .limit(limit)\
+        .limit(page_size)\
+        .offset(offset)\
         .all()
+    
+    # Calculate pagination metadata
+    total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+    has_next = page < total_pages
+    has_prev = page > 1
     
     return jsonify({
         'instance_id': instance_id,
@@ -36,13 +69,28 @@ def get_instance_metrics(current_user, instance_id):
             'network_out': m.network_out,
             'is_outlier': m.is_outlier,
             'outlier_type': m.outlier_type
-        } for m in metrics]
+        } for m in metrics],
+        'pagination': {
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': has_next,
+            'has_prev': has_prev
+        }
     }), 200
 
 @metrics_bp.route('/decisions/<instance_id>', methods=['GET'])
 @token_required
 def get_scaling_decisions(current_user, instance_id):
-    """Get scaling decisions for a specific instance."""
+    """
+    Get scaling decisions for a specific instance with pagination support.
+    
+    Query Parameters:
+        - page (int, optional): Page number (1-indexed, default: 1)
+        - page_size (int, optional): Number of items per page (default: 10, max: 100)
+        - limit (int, optional): Legacy parameter for backward compatibility (overrides page_size)
+    """
     user_id = current_user['user_id']
     
     instance = Instance.query.filter_by(instance_id=instance_id).first()
@@ -52,12 +100,38 @@ def get_scaling_decisions(current_user, instance_id):
     if str(instance.user_id) != str(user_id):
         return jsonify({'error': 'Unauthorized: You don\'t own this instance'}), 403
     
-    # Get decisions
-    limit = request.args.get('limit', 50, type=int)
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 10, type=int)
+    
+    # Support legacy 'limit' parameter for backward compatibility
+    if 'limit' in request.args:
+        page_size = request.args.get('limit', 10, type=int)
+        page = 1  # Reset to first page when using limit
+    
+    # Validate pagination parameters
+    if page < 1:
+        return jsonify({'error': 'Page must be >= 1'}), 400
+    if page_size < 1 or page_size > 100:
+        return jsonify({'error': 'Page size must be between 1 and 100'}), 400
+    
+    # Calculate offset
+    offset = (page - 1) * page_size
+    
+    # Get total count
+    total_count = ScalingDecision.query.filter_by(instance_id=instance_id).count()
+    
+    # Get decisions with pagination
     decisions = ScalingDecision.query.filter_by(instance_id=instance_id)\
         .order_by(ScalingDecision.timestamp.desc())\
-        .limit(limit)\
+        .limit(page_size)\
+        .offset(offset)\
         .all()
+    
+    # Calculate pagination metadata
+    total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+    has_next = page < total_pages
+    has_prev = page > 1
     
     return jsonify({
         'instance_id': instance_id,
@@ -70,7 +144,15 @@ def get_scaling_decisions(current_user, instance_id):
             'network_out': d.network_out,
             'decision': d.decision,
             'reason': d.reason
-        } for d in decisions]
+        } for d in decisions],
+        'pagination': {
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': has_next,
+            'has_prev': has_prev
+        }
     }), 200
 
 @metrics_bp.route('/simulate', methods=['POST'])
