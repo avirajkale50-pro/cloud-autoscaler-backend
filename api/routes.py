@@ -19,12 +19,10 @@ def register_instance():
     if not all([instance_id, instance_type, region]):
         return jsonify({"error": "Missing required fields"}), 400
         
-    # Verify AWS connection
     success, result = verify_connection(instance_id, region)
     if not success:
         return jsonify({"error": f"Failed to verify instance: {result}"}), 400
         
-    # Save to database
     try:
         new_instance = Instance(
             instance_id=instance_id,

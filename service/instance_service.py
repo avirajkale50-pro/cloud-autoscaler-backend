@@ -2,6 +2,7 @@ from repo.db import db
 from repo.models import Instance
 from service.aws_monitor import verify_connection
 from util.logger import logger
+from datetime import datetime
 
 def register_instance(user_id, instance_id, instance_type, region, is_mock=False):
     """
@@ -17,8 +18,8 @@ def register_instance(user_id, instance_id, instance_type, region, is_mock=False
     Returns:
         (success, instance_object or error_message)
     """
-    # Check if instance already exists
-    existing_instance = Instance.query.filter_by(instance_id=instance_id).first()
+    # Check if instance already exists (not soft-deleted)
+    existing_instance = Instance.query.filter_by(instance_id=instance_id).filter(Instance.deleted_at.is_(None)).first()
     if existing_instance:
         return False, "Instance already registered"
     
@@ -54,16 +55,12 @@ def register_instance(user_id, instance_id, instance_type, region, is_mock=False
         return False, str(e)
 
 def start_monitoring(user_id, instance_id):
-    """
-    Start monitoring for an instance.
-    Returns (success, message).
-    """
     instance = Instance.query.filter_by(instance_id=instance_id).first()
     
     if not instance:
         return False, "Instance not found"
     
-    # Check ownership
+    #who own the instance
     if str(instance.user_id) != str(user_id):
         return False, "Unauthorized: You don't own this instance"
     
@@ -80,16 +77,11 @@ def start_monitoring(user_id, instance_id):
         return False, str(e)
 
 def stop_monitoring(user_id, instance_id):
-    """
-    Stop monitoring for an instance.
-    Returns (success, message).
-    """
     instance = Instance.query.filter_by(instance_id=instance_id).first()
     
     if not instance:
         return False, "Instance not found"
     
-    # Check ownership
     if str(instance.user_id) != str(user_id):
         return False, "Unauthorized: You don't own this instance"
     
@@ -107,8 +99,33 @@ def stop_monitoring(user_id, instance_id):
 
 def get_user_instances(user_id):
     """
-    Get all instances for a user.
+    Get all instances for a user (excluding soft-deleted instances).
     Returns list of instances.
     """
-    instances = Instance.query.filter_by(user_id=user_id).all()
+    instances = Instance.query.filter_by(user_id=user_id).filter(Instance.deleted_at.is_(None)).all()
     return instances
+
+def delete_instance(user_id, instance_id):
+
+    instance = Instance.query.filter_by(instance_id=instance_id).filter(Instance.deleted_at.is_(None)).first()
+    
+    if not instance:
+        return False, "Instance not found"
+    
+    if str(instance.user_id) != str(user_id):
+        return False, "Unauthorized: You don't own this instance"
+    
+    if instance.is_monitoring:
+        return False, "Cannot delete instance while monitoring is active. Please stop monitoring first."
+    
+    instance.deleted_at = datetime.utcnow()
+    
+    try:
+        db.session.commit()
+        logger.info(f"Soft deleted instance {instance_id} for user {user_id}")
+        return True, "Instance deleted successfully"
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to delete instance {instance_id}: {str(e)}")
+        return False, str(e)
+

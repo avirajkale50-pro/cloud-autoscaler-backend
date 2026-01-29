@@ -3,20 +3,16 @@ from repo.models import Metric, ScalingDecision, Instance
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from util.logger import logger
+from constants.service_constants import (
+    SCALE_DOWN_CPU_THRESHOLD, SCALE_DOWN_MEMORY_THRESHOLD,
+    SCALE_UP_THRESHOLD, SUSTAINED_DURATION_MINUTES,
+    CAPACITY_MULTIPLIER_UP, CAPACITY_MULTIPLIER_DOWN,
+    IQR_MULTIPLIER
+)
 
 def check_sustained_usage(instance_id, cpu_threshold=None, memory_threshold=None, duration_minutes=5, above=True):
     """
-    Check if CPU/memory usage has been sustained above or below thresholds for a given duration.
-    
-    Args:
-        instance_id: Instance to check
-        cpu_threshold: CPU threshold percentage (optional)
-        memory_threshold: Memory threshold percentage (optional)
-        duration_minutes: Duration in minutes to check (default: 5)
-        above: If True, check if values are above threshold; if False, check if below
-    
-    Returns:
-        (is_sustained, percentage_of_time) - True if sustained for entire duration, and % of time condition was met
+    Check if CPU/memory usage has been sustained above or below thresholds for a given duration
     """
     cutoff_time = datetime.utcnow() - timedelta(minutes=duration_minutes)
     
@@ -42,13 +38,11 @@ def check_sustained_usage(instance_id, cpu_threshold=None, memory_threshold=None
         
         if memory_threshold is not None and metric.memory_usage is not None:
             if above:
-                # For scale up, OR condition (either CPU or memory high)
                 if cpu_threshold is not None:
                     condition_met = condition_met or metric.memory_usage > memory_threshold
                 else:
                     condition_met = metric.memory_usage > memory_threshold
             else:
-                # For scale down, AND condition (both CPU and memory low)
                 if cpu_threshold is not None and metric.cpu_utilization is not None:
                     condition_met = metric.cpu_utilization < cpu_threshold and metric.memory_usage < memory_threshold
                 else:
@@ -58,7 +52,6 @@ def check_sustained_usage(instance_id, cpu_threshold=None, memory_threshold=None
             matching_count += 1
     
     percentage = (matching_count / total_count) * 100 if total_count > 0 else 0
-    # Consider sustained if 80% or more of the time the condition was met
     is_sustained = percentage >= 80
     
     return is_sustained, percentage
@@ -71,7 +64,6 @@ def calculate_metrics_mean(instance_id, time_window_minutes=5):
     """
     cutoff_time = datetime.utcnow() - timedelta(minutes=time_window_minutes)
     
-    # Filter out outlier metrics to prevent skewing the baseline
     metrics = Metric.query.filter(
         Metric.instance_id == instance_id,
         Metric.timestamp >= cutoff_time,
@@ -81,7 +73,6 @@ def calculate_metrics_mean(instance_id, time_window_minutes=5):
     if not metrics:
         return None
     
-    # Calculate means
     cpu_values = [m.cpu_utilization for m in metrics if m.cpu_utilization is not None]
     memory_values = [m.memory_usage for m in metrics if m.memory_usage is not None]
     network_in_values = [m.network_in for m in metrics if m.network_in is not None]
@@ -102,10 +93,7 @@ def make_scaling_decision(instance_id):
     1. Immediate scale down if CPU < 10% AND memory < 20%
     2. Immediate scale up if CPU > 90% OR memory > 90%
     3. Use IQR (Interquartile Range) method for outlier detection considering all metrics
-    
-    Returns (success, decision_object or error_message).
     """
-    # Get the most recent metric (current state)
     latest_metric = Metric.query.filter_by(instance_id=instance_id)\
         .order_by(Metric.timestamp.desc())\
         .first()
@@ -132,52 +120,51 @@ def make_scaling_decision(instance_id):
     outlier_type = None
     reasons_list = []
     
-    # Priority 1: Scale down if BOTH CPU < 10% AND memory < 20% sustained for 5 minutes
+    # Priority 1: Scale down if BOTH CPU < SCALE_DOWN_CPU_THRESHOLD AND memory < SCALE_DOWN_MEMORY_THRESHOLD sustained for SUSTAINED_DURATION_MINUTES minutes
     if current_cpu is not None and current_memory is not None:
         is_sustained, percentage = check_sustained_usage(
             instance_id, 
-            cpu_threshold=10, 
-            memory_threshold=20, 
-            duration_minutes=5, 
+            cpu_threshold=SCALE_DOWN_CPU_THRESHOLD, 
+            memory_threshold=SCALE_DOWN_MEMORY_THRESHOLD, 
+            duration_minutes=SUSTAINED_DURATION_MINUTES, 
             above=False
         )
         if is_sustained:
             decision = "scale_down"
-            reason = f"Sustained scale down: CPU < 10% AND Memory < 20% for {percentage:.1f}% of last 5 minutes (Current: CPU={current_cpu:.2f}%, Memory={current_memory:.2f}%)"
+            reason = f"Sustained scale down: CPU < {SCALE_DOWN_CPU_THRESHOLD}% AND Memory < {SCALE_DOWN_MEMORY_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: CPU={current_cpu:.2f}%, Memory={current_memory:.2f}%)"
             is_outlier = True
             outlier_type = "scale_down"
     
-    # Priority 2: Scale up if CPU > 90% OR memory > 90% sustained for 5 minutes
+    # Priority 2: Scale up if CPU > SCALE_UP_THRESHOLD% OR memory > SCALE_UP_THRESHOLD% sustained for SUSTAINED_DURATION_MINUTES minutes
     if decision is None:
         if current_cpu is not None:
             is_sustained, percentage = check_sustained_usage(
                 instance_id, 
-                cpu_threshold=90, 
-                duration_minutes=5, 
+                cpu_threshold=SCALE_UP_THRESHOLD, 
+                duration_minutes=SUSTAINED_DURATION_MINUTES, 
                 above=True
             )
             if is_sustained:
                 decision = "scale_up"
-                reason = f"Sustained scale up: CPU > 90% for {percentage:.1f}% of last 5 minutes (Current: {current_cpu:.2f}%)"
+                reason = f"Sustained scale up: CPU > {SCALE_UP_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: {current_cpu:.2f}%)"
                 is_outlier = True
                 outlier_type = "scale_up"
         
         if decision is None and current_memory is not None:
             is_sustained, percentage = check_sustained_usage(
                 instance_id, 
-                memory_threshold=90, 
-                duration_minutes=5, 
+                memory_threshold=SCALE_UP_THRESHOLD, 
+                duration_minutes=SUSTAINED_DURATION_MINUTES, 
                 above=True
             )
             if is_sustained:
                 decision = "scale_up"
-                reason = f"Sustained scale up: Memory > 90% for {percentage:.1f}% of last 5 minutes (Current: {current_memory:.2f}%)"
+                reason = f"Sustained scale up: Memory > {SCALE_UP_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: {current_memory:.2f}%)"
                 is_outlier = True
                 outlier_type = "scale_up"
     
     # Priority 3: Use IQR method for normal conditions considering all metrics
     if decision is None:
-        # Get historical metrics for IQR calculation (last 5 minutes, excluding outliers)
         cutoff_time = datetime.utcnow() - timedelta(minutes=5)
         historical_metrics = Metric.query.filter(
             Metric.instance_id == instance_id,
@@ -186,7 +173,6 @@ def make_scaling_decision(instance_id):
         ).all()
         
         if len(historical_metrics) < 4:
-            # Not enough data for IQR
             decision = "no_action"
             metric_info = []
             if current_cpu is not None:
@@ -195,11 +181,9 @@ def make_scaling_decision(instance_id):
                 metric_info.append(f"Memory: {current_memory:.2f}%")
             reason = f"Insufficient data for IQR analysis. Current metrics - {', '.join(metric_info)}"
         else:
-            # Analyze each metric using IQR
             scale_up_votes = 0
             scale_down_votes = 0
             
-            # CPU Analysis
             if current_cpu is not None:
                 cpu_values = sorted([m.cpu_utilization for m in historical_metrics if m.cpu_utilization is not None])
                 if len(cpu_values) >= 4:
@@ -207,8 +191,8 @@ def make_scaling_decision(instance_id):
                     q1 = cpu_values[n // 4]
                     q3 = cpu_values[(3 * n) // 4]
                     iqr = q3 - q1
-                    cpu_lower = q1 - 1.5 * iqr
-                    cpu_upper = q3 + 1.5 * iqr
+                    cpu_lower = q1 - IQR_MULTIPLIER * iqr
+                    cpu_upper = q3 + IQR_MULTIPLIER * iqr
                     
                     if current_cpu > cpu_upper:
                         scale_up_votes += 2  # CPU gets higher weight
@@ -225,8 +209,8 @@ def make_scaling_decision(instance_id):
                     q1 = memory_values[n // 4]
                     q3 = memory_values[(3 * n) // 4]
                     iqr = q3 - q1
-                    mem_lower = q1 - 1.5 * iqr
-                    mem_upper = q3 + 1.5 * iqr
+                    mem_lower = q1 - IQR_MULTIPLIER * iqr
+                    mem_upper = q3 + IQR_MULTIPLIER * iqr
                     
                     if current_memory > mem_upper:
                         scale_up_votes += 2  # Memory gets higher weight
@@ -243,8 +227,8 @@ def make_scaling_decision(instance_id):
                     q1 = network_in_values[n // 4]
                     q3 = network_in_values[(3 * n) // 4]
                     iqr = q3 - q1
-                    net_in_lower = q1 - 1.5 * iqr
-                    net_in_upper = q3 + 1.5 * iqr
+                    net_in_lower = q1 - IQR_MULTIPLIER * iqr
+                    net_in_upper = q3 + IQR_MULTIPLIER * iqr
                     
                     if current_network_in > net_in_upper:
                         scale_up_votes += 1  # Network gets lower weight
@@ -261,8 +245,8 @@ def make_scaling_decision(instance_id):
                     q1 = network_out_values[n // 4]
                     q3 = network_out_values[(3 * n) // 4]
                     iqr = q3 - q1
-                    net_out_lower = q1 - 1.5 * iqr
-                    net_out_upper = q3 + 1.5 * iqr
+                    net_out_lower = q1 - IQR_MULTIPLIER * iqr
+                    net_out_upper = q3 + IQR_MULTIPLIER * iqr
                     
                     if current_network_out > net_out_upper:
                         scale_up_votes += 1  # Network gets lower weight
@@ -271,7 +255,6 @@ def make_scaling_decision(instance_id):
                         scale_down_votes += 1
                         reasons_list.append(f"Network Out ({current_network_out:,} bytes) < lower bound ({net_out_lower:,.0f} bytes)")
             
-            # Make decision based on votes (need at least 2 votes to trigger scaling)
             if scale_up_votes >= 2:
                 decision = "scale_up"
                 reason = f"Scale up recommended. Reasons: {'; '.join(reasons_list)}"
@@ -297,22 +280,27 @@ def make_scaling_decision(instance_id):
             db.session.rollback()
             logger.warning(f"Could not flag metric as outlier: {e}")
     
-    # Update instance capacity based on scaling decision
-    instance = Instance.query.filter_by(instance_id=instance_id).first()
-    if instance and decision in ['scale_up', 'scale_down']:
+    instance = Instance.query.filter_by(instance_id=instance_id).filter(Instance.deleted_at.is_(None)).first()
+    
+    if not instance:
+        logger.warning(f"Instance {instance_id} not found or deleted, skipping scaling decision")
+        return False, "Instance not found"
+    
+    previous_decision = instance.last_decision
+    is_state_change = (previous_decision != decision)
+    
+    if decision in ['scale_up', 'scale_down'] and is_state_change:
         try:
             if decision == 'scale_up':
-                # Increase capacity by 50%
-                instance.cpu_capacity *= 1.5
-                instance.memory_capacity *= 1.5
-                instance.network_capacity *= 1.5
+                instance.cpu_capacity *= CAPACITY_MULTIPLIER_UP
+                instance.memory_capacity *= CAPACITY_MULTIPLIER_UP
+                instance.network_capacity *= CAPACITY_MULTIPLIER_UP
                 instance.current_scale_level += 1
                 logger.info(f"Scaled up {instance_id}: Level {instance.current_scale_level}, CPU capacity: {instance.cpu_capacity:.1f}%")
             elif decision == 'scale_down':
-                # Decrease capacity by 33% (inverse of 1.5x increase)
-                instance.cpu_capacity *= 0.67
-                instance.memory_capacity *= 0.67
-                instance.network_capacity *= 0.67
+                instance.cpu_capacity *= CAPACITY_MULTIPLIER_DOWN
+                instance.memory_capacity *= CAPACITY_MULTIPLIER_DOWN
+                instance.network_capacity *= CAPACITY_MULTIPLIER_DOWN
                 instance.current_scale_level -= 1
                 logger.info(f"Scaled down {instance_id}: Level {instance.current_scale_level}, CPU capacity: {instance.cpu_capacity:.1f}%")
             
@@ -321,30 +309,45 @@ def make_scaling_decision(instance_id):
             db.session.rollback()
             logger.error(f"Failed to update instance capacity: {e}")
     
-    scaling_decision = ScalingDecision(
-        instance_id=instance_id,
-        cpu_utilization=current_cpu,
-        memory_usage=current_memory,
-        network_in=current_network_in,
-        network_out=current_network_out,
-        decision=decision,
-        reason=reason
-    )
-    
-    try:
-        db.session.add(scaling_decision)
-        db.session.commit()
-        return True, scaling_decision
-    except Exception as e:
-        db.session.rollback()
-        return False, str(e)
+    # Only save to database and log if state has changed
+    if is_state_change:
+        scaling_decision = ScalingDecision(
+            instance_id=instance_id,
+            cpu_utilization=current_cpu,
+            memory_usage=current_memory,
+            network_in=current_network_in,
+            network_out=current_network_out,
+            decision=decision,
+            reason=reason
+        )
+        
+        try:
+            db.session.add(scaling_decision)
+            
+            # Update instance's last decision
+            instance.last_decision = decision
+            
+            db.session.commit()
+
+            if previous_decision is None:
+                logger.info(f"Initial scaling state for {instance_id}: {decision}")
+            elif decision == 'no_action':
+                logger.info(f"State change for {instance_id}: {previous_decision} → {decision} (returned to normal)")
+            else:
+                logger.info(f"State change for {instance_id}: {previous_decision} → {decision}")
+            
+            return True, scaling_decision
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to save scaling decision: {e}")
+            return False, str(e)
+    else:
+        logger.debug(f"No state change for {instance_id}, still in '{decision}' state")
+        return True, f"No state change (still {decision})"
+
 
 def process_all_monitored_instances():
-    """
-    Process scaling decisions for all instances that are being monitored.
-    This function is called by the scheduler every 15 seconds.
-    """
-    monitored_instances = Instance.query.filter_by(is_monitoring=True).all()
+    monitored_instances = Instance.query.filter_by(is_monitoring=True).filter(Instance.deleted_at.is_(None)).all()
     
     results = []
     for instance in monitored_instances:
@@ -352,7 +355,7 @@ def process_all_monitored_instances():
         results.append({
             'instance_id': instance.instance_id,
             'success': success,
-            'result': result.decision if success else result
+            'result': result.decision if success and hasattr(result, 'decision') else result
         })
     
     return results

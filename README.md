@@ -150,6 +150,7 @@ Now you can test any endpoint that requires authentication!
 | `GET` | `/api/instances/` | Get all user instances | ✅ Yes |
 | `PATCH` | `/api/instances/<id>/monitor/start` | Start monitoring | ✅ Yes |
 | `PATCH` | `/api/instances/<id>/monitor/stop` | Stop monitoring | ✅ Yes |
+| `DELETE` | `/api/instances/<id>` | Delete instance (soft delete) | ✅ Yes |
 | `GET` | `/api/metrics/<id>` | Get instance metrics | ✅ Yes |
 | `GET` | `/api/metrics/decisions/<id>` | Get scaling decisions | ✅ Yes |
 | `POST` | `/api/metrics/simulate` | Simulate metrics (testing) | ✅ Yes |
@@ -452,7 +453,49 @@ Authorization: Bearer <your-jwt-token>
 
 ---
 
-## 9. Get Instance Metrics
+## 9. Delete Instance
+
+**Endpoint:** `DELETE /api/instances/<instance_id>`  
+**Authorization:** Required (Bearer Token)
+
+**Headers:**
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Instance deleted successfully"
+}
+```
+
+**Error Responses:**
+
+*400 Bad Request - Monitoring still active:*
+```json
+{
+  "error": "Cannot delete instance while monitoring is active. Please stop monitoring first."
+}
+```
+
+*403 Forbidden:*
+```json
+{
+  "error": "Unauthorized: You don't own this instance"
+}
+```
+
+*404 Not Found:*
+```json
+{
+  "error": "Instance not found"
+}
+```
+
+---
+
+## 10. Get Instance Metrics
 
 **Endpoint:** `GET /api/metrics/<instance_id>?limit=50`  
 **Authorization:** Required (Bearer Token)
@@ -486,7 +529,7 @@ Authorization: Bearer <your-jwt-token>
 
 ---
 
-## 10. Get Scaling Decisions
+## 11. Get Scaling Decisions
 
 **Endpoint:** `GET /api/metrics/decisions/<instance_id>?limit=20`  
 **Authorization:** Required (Bearer Token)
@@ -520,7 +563,7 @@ Authorization: Bearer <your-jwt-token>
 
 ---
 
-## 11. Simulate Metrics
+## 12. Simulate Metrics
 
 **Endpoint:** `POST /api/metrics/simulate`  
 **Authorization:** Required (Bearer Token)

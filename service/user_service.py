@@ -7,12 +7,10 @@ def register_user(email, password):
     Register a new user.
     Returns (success, result) where result is user_id or error message.
     """
-    # Check if user already exists
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
         return False, "User with this email already exists"
     
-    # for password length validation
     if len(password) < 6:
         return False, "Password must be at least 6 characters long"
     

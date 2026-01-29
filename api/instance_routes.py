@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from util.auth import token_required
-from service.instance_service import register_instance, start_monitoring, stop_monitoring, get_user_instances
+from service.instance_service import register_instance, start_monitoring, stop_monitoring, get_user_instances, delete_instance
 
 instance_bp = Blueprint('instances', __name__)
 
@@ -16,7 +16,7 @@ def create_instance(current_user):
     instance_id = data.get('instance_id')
     instance_type = data.get('instance_type')
     region = data.get('region')
-    is_mock = data.get('is_mock', False)  # Default to False for backward compatibility
+    is_mock = data.get('is_mock', False)
     
     if not all([instance_id, instance_type, region]):
         return jsonify({'error': 'instance_id, instance_type, and region are required'}), 400
@@ -89,3 +89,20 @@ def stop_instance_monitoring(current_user, instance_id):
         return jsonify({'message': message}), 200
     else:
         return jsonify({'error': message}), 400
+
+@instance_bp.route('/<instance_id>', methods=['DELETE'])
+@token_required
+def delete_instance_route(current_user, instance_id):
+    """Delete an instance (soft delete)"""
+    user_id = current_user['user_id']
+    success, message = delete_instance(user_id, instance_id)
+    
+    if success:
+        return jsonify({'message': message}), 200
+    else:
+        if "not found" in message.lower():
+            return jsonify({'error': message}), 404
+        elif "unauthorized" in message.lower():
+            return jsonify({'error': message}), 403
+        else:
+            return jsonify({'error': message}), 400

@@ -1,5 +1,10 @@
 from flask import Blueprint, request, jsonify
 from service.user_service import register_user, login_user
+from util.validators import validate_email, validate_password
+from util.auth import token_required
+from repo.models import User, Instance
+import jwt
+from flask import current_app
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -14,8 +19,13 @@ def register():
     email = data.get('email')
     password = data.get('password')
     
-    if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
+    is_valid_email, email_error = validate_email(email)
+    if not is_valid_email:
+        return jsonify({'error': email_error}), 400
+        
+    is_valid_password, password_error = validate_password(password)
+    if not is_valid_password:
+        return jsonify({'error': password_error}), 400
     
     success, result = register_user(email, password)
     
@@ -40,6 +50,12 @@ def login():
     
     if not email or not password:
         return jsonify({'error': 'Email and password are required'}), 400
+
+    from util.validators import validate_email
+    
+    is_valid_email, email_error = validate_email(email)
+    if not is_valid_email:
+        return jsonify({'error': email_error}), 400
     
     success, result = login_user(email, password)
     
@@ -54,10 +70,7 @@ def login():
 @auth_bp.route('/me', methods=['GET'])
 def get_user_info():
     """Get current user information."""
-    from util.auth import token_required
-    from repo.models import User, Instance
     
-    # Extract token from request
     token = None
     if 'Authorization' in request.headers:
         auth_header = request.headers['Authorization']
@@ -67,20 +80,14 @@ def get_user_info():
     if not token:
         return jsonify({'error': 'Token is missing'}), 401
     
-    # Verify token manually since we can't use decorator on this route
-    import jwt
-    from flask import current_app
-    
     try:
         payload = jwt.decode(token, current_app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
         user_id = payload['user_id']
         
-        # Get user from database
         user = User.query.filter_by(id=user_id).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        # Get instance counts
         total_instances = Instance.query.filter_by(user_id=user_id).count()
         monitoring_instances = Instance.query.filter_by(user_id=user_id, is_monitoring=True).count()
         

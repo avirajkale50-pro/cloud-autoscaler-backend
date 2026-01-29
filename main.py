@@ -29,15 +29,15 @@ def fetch_metrics_job(app):
             # Skip job execution - no instances to monitor
             return
         
-        logger.info(f"Running fetch_metrics_job for {monitored_count} instance(s)...")
+        logger.debug(f"Running fetch_metrics_job for {monitored_count} instance(s)...")
         instances = Instance.query.filter_by(is_monitoring=True).all()
         
         for instance in instances:
-            logger.info(f"Fetching metrics for {instance.instance_id}...")
+            logger.debug(f"Fetching metrics for {instance.instance_id}...")
             
             # Use mock data for mock instances, real AWS data for regular instances
             if instance.is_mock:
-                logger.info(f"Using mock data for {instance.instance_id}")
+                logger.debug(f"Using mock data for {instance.instance_id}")
                 metrics_data = generate_mock_metrics(instance.instance_id)
             else:
                 metrics_data = fetch_instance_metrics(instance.instance_id, instance.region)
@@ -75,12 +75,12 @@ def scaling_decision_job(app):
             # Skip job execution - no instances to monitor
             return
         
-        logger.info(f"Running scaling_decision_job for {monitored_count} instance(s)...")
+        logger.debug(f"Running scaling_decision_job for {monitored_count} instance(s)...")
         results = process_all_monitored_instances()
         
         for result in results:
             if result['success']:
-                logger.info(f"Decision for {result['instance_id']}: {result['result']}")
+                logger.debug(f"Decision for {result['instance_id']}: {result['result']}")
             else:
                 logger.error(f"Failed to make decision for {result['instance_id']}: {result['result']}")
 
@@ -126,8 +126,7 @@ def create_app():
             trigger='interval',
             seconds=60
         )
-        
-        logger.info("Scheduler initialized successfully")
+        # Scheduler initialized - startup log removed to reduce noise
     
     # Register Blueprints
     app.register_blueprint(api_bp, url_prefix='/api')
@@ -155,7 +154,7 @@ def create_app():
         # Create tables
         try:
             db.create_all()
-            logger.info("Database connected and tables created (if not exist).")
+            # Database initialized - startup log removed to reduce noise
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
     

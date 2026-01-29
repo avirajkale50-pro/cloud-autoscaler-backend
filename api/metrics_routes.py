@@ -110,8 +110,7 @@ def simulate_metrics(current_user):
     
     if str(instance.user_id) != str(user_id):
         return jsonify({'error': 'Unauthorized: You don\'t own this instance'}), 403
-    
-    # Get simulation parameters
+
     cpu_utilization = data.get('cpu_utilization')
     memory_usage = data.get('memory_usage')
     network_in = data.get('network_in')
@@ -123,12 +122,10 @@ def simulate_metrics(current_user):
     
     try:
         if duration_minutes:
-            # Prolonged simulation mode
             num_metrics = int((duration_minutes * 60) / interval_seconds)
             start_time = datetime.utcnow()
             
             for i in range(num_metrics):
-                # Calculate timestamp for this metric (backdated)
                 metric_timestamp = start_time - timedelta(seconds=(num_metrics - i - 1) * interval_seconds)
                 
                 metric = Metric(
@@ -153,10 +150,9 @@ def simulate_metrics(current_user):
                 'metrics_created': num_metrics,
                 'duration_minutes': duration_minutes,
                 'interval_seconds': interval_seconds,
-                'sample_metrics': created_metrics[:3]  # Show first 3 as sample
+                'sample_metrics': created_metrics[:3]
             }), 201
         else:
-            # Instant simulation mode (single metric)
             metric = Metric(
                 instance_id=instance_id,
                 cpu_utilization=cpu_utilization,

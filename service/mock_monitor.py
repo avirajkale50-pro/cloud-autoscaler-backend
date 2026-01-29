@@ -1,44 +1,33 @@
 import random
 from util.logger import logger
+from constants.service_constants import (
+    MOCK_UTILIZATION_MIN_NORMAL, MOCK_UTILIZATION_MAX_NORMAL,
+    MOCK_UTILIZATION_MIN_VARIANCE, MOCK_UTILIZATION_MAX_VARIANCE,
+    MOCK_VARIANCE_ADJUSTMENT, MOCK_NETWORK_IN_MIN, MOCK_NETWORK_IN_MAX,
+    MOCK_NETWORK_OUT_MIN, MOCK_NETWORK_OUT_MAX, MOCK_DISK_READ_MIN, MOCK_DISK_READ_MAX
+)
 
 def generate_mock_metrics(instance_id):
-    """
-    Generate mock metrics for testing without AWS CLI.
-    Generates realistic metrics mostly in the 40-50% utilization range.
-    
-    Args:
-        instance_id: The instance ID to generate metrics for
-        
-    Returns:
-        Dictionary with mock metrics in the same format as fetch_instance_metrics
-    """
-    # Generate CPU and memory in the 40-50% range with some variation
-    # 80% of the time in 40-50%, 20% of the time slightly outside for realism
+    # Generate CPU and memory in the 40-50% range with some variation 80% of the time in 40-50%, 20% of the time slightly outside for realism
     if random.random() < 0.8:
-        cpu = random.uniform(40, 50)
-        memory = random.uniform(40, 50)
+        cpu = random.uniform(MOCK_UTILIZATION_MIN_NORMAL, MOCK_UTILIZATION_MAX_NORMAL)
+        memory = random.uniform(MOCK_UTILIZATION_MIN_NORMAL, MOCK_UTILIZATION_MAX_NORMAL)
     else:
-        # Occasional variation outside the main range
-        cpu = random.uniform(35, 60)
-        memory = random.uniform(35, 60)
+        cpu = random.uniform(MOCK_UTILIZATION_MIN_VARIANCE, MOCK_UTILIZATION_MAX_VARIANCE)
+        memory = random.uniform(MOCK_UTILIZATION_MIN_VARIANCE, MOCK_UTILIZATION_MAX_VARIANCE)
     
-    # Add small random variations to make it more realistic
-    cpu = round(cpu + random.uniform(-2, 2), 2)
-    memory = round(memory + random.uniform(-2, 2), 2)
+    cpu = round(cpu + random.uniform(-MOCK_VARIANCE_ADJUSTMENT, MOCK_VARIANCE_ADJUSTMENT), 2)
+    memory = round(memory + random.uniform(-MOCK_VARIANCE_ADJUSTMENT, MOCK_VARIANCE_ADJUSTMENT), 2)
     
-    # Ensure values stay within valid bounds (0-100%)
     cpu = max(0, min(100, cpu))
     memory = max(0, min(100, memory))
     
-    # Generate network metrics (in bytes)
-    # Simulate moderate network activity
-    network_in = random.randint(1000000, 5000000)  # 1-5 MB
-    network_out = random.randint(500000, 3000000)  # 0.5-3 MB
+    network_in = random.randint(MOCK_NETWORK_IN_MIN, MOCK_NETWORK_IN_MAX)
+    network_out = random.randint(MOCK_NETWORK_OUT_MIN, MOCK_NETWORK_OUT_MAX)
     
-    # Simulate disk read activity
-    disk_read = random.randint(100000, 1000000)  # 100KB-1MB
+    disk_read = random.randint(MOCK_DISK_READ_MIN, MOCK_DISK_READ_MAX)
     
-    logger.info(f"Generated mock metrics for {instance_id}: CPU={cpu:.2f}%, Memory={memory:.2f}%")
+    logger.debug(f"Generated mock metrics for {instance_id}: CPU={cpu:.2f}%, Memory={memory:.2f}%")
     
     return {
         'cpu_utilization': cpu,

@@ -9,9 +9,7 @@ class User(db.Model):
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = db.Column(db.String, unique=True, nullable=False)
     password = db.Column(db.String, nullable=False)  # to hash password
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)    
     instances = db.relationship('Instance', backref='user', lazy=True)
 
     def __repr__(self):
@@ -27,17 +25,13 @@ class Instance(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), nullable=False)
     is_monitoring = db.Column(db.Boolean, default=False)
-    
-    # Mock instance support - generate data without AWS CLI
     is_mock = db.Column(db.Boolean, default=False)
-    
-    # Capacity tracking - changes with scaling decisions
-    cpu_capacity = db.Column(db.Float, default=100.0)  # percentage capacity
-    memory_capacity = db.Column(db.Float, default=100.0)  # percentage capacity
-    network_capacity = db.Column(db.Float, default=100.0)  # percentage capacity
-    current_scale_level = db.Column(db.Integer, default=1)  # tracks scale ups/downs
-
-    
+    cpu_capacity = db.Column(db.Float, default=100.0)  
+    memory_capacity = db.Column(db.Float, default=100.0)  
+    network_capacity = db.Column(db.Float, default=100.0)  
+    current_scale_level = db.Column(db.Integer, default=1)
+    deleted_at = db.Column(db.DateTime, nullable=True, default=None)
+    last_decision = db.Column(db.String, nullable=True, default=None)  # scale_up / scale_down / no_action
     metrics = db.relationship('Metric', backref='instance', lazy=True)
     decisions = db.relationship('ScalingDecision', backref='instance', lazy=True)
 
@@ -50,15 +44,12 @@ class Metric(db.Model):
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     instance_id = db.Column(db.String, db.ForeignKey('instances.instance_id'), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    
     cpu_utilization = db.Column(db.Float)
     memory_usage = db.Column(db.Float)
     network_in = db.Column(db.BigInteger)
     network_out = db.Column(db.BigInteger)
-    
-    # Outlier flags - metrics that triggered immediate scaling decisions
     is_outlier = db.Column(db.Boolean, default=False)
-    outlier_type = db.Column(db.String)  # 'scale_up', 'scale_down', or None
+    outlier_type = db.Column(db.String)
 
     def __repr__(self):
         return f'<Metric {self.id}>'
@@ -68,14 +59,12 @@ class ScalingDecision(db.Model):
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     instance_id = db.Column(db.String, db.ForeignKey('instances.instance_id'), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow) 
     cpu_utilization = db.Column(db.Float)
     memory_usage = db.Column(db.Float)
     network_in = db.Column(db.BigInteger)
     network_out = db.Column(db.BigInteger)
-    
-    decision = db.Column(db.String) # scale_up / scale_down / no_action
+    decision = db.Column(db.String)
     reason = db.Column(db.Text)
 
     def __repr__(self):
