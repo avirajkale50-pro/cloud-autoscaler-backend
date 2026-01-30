@@ -35,7 +35,6 @@ class TestInstanceRegistration:
             assert result.instance_id == instance_id
             assert result.is_mock is True
             assert result.is_monitoring is False
-            assert result.current_scale_level == 1
     
     def test_duplicate_instance_registration(self, app, sample_user, sample_instance):
         """Test that duplicate instance registration is rejected."""
@@ -97,21 +96,7 @@ class TestInstanceRegistration:
             assert success is False
             assert "failed to verify" in result.lower()
     
-    def test_instance_default_capacity_values(self, app, sample_user):
-        """Test that instance is created with default capacity values."""
-        with app.app_context():
-            success, instance = register_instance(
-                sample_user['id'],
-                "i-capacity-test",
-                "t2.micro",
-                "us-east-1",
-                is_mock=True
-            )
-            
-            assert success is True
-            assert instance.cpu_capacity == 100.0
-            assert instance.memory_capacity == 100.0
-            assert instance.network_capacity == 100.0
+
 
 
 class TestStartMonitoring:

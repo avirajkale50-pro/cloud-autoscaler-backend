@@ -70,17 +70,6 @@ components:
           type: boolean
         is_mock:
           type: boolean
-        cpu_capacity:
-          type: number
-          format: float
-        memory_capacity:
-          type: number
-          format: float
-        network_capacity:
-          type: number
-          format: float
-        current_scale_level:
-          type: integer
         created_at:
           type: string
           format: date-time

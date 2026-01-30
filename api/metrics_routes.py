@@ -199,10 +199,17 @@ def simulate_metrics(current_user):
     network_out = data.get('network_out')
     duration_minutes = data.get('duration_minutes')
     interval_seconds = data.get('interval_seconds', 30)
+    clear_existing = data.get('clear_existing', False)  # New parameter to clear old metrics
     
     created_metrics = []
     
     try:
+        # Clear existing metrics if requested
+        if clear_existing:
+            deleted_count = Metric.query.filter_by(instance_id=instance_id).delete()
+            db.session.commit()
+            logger.info(f"Cleared {deleted_count} existing metrics for {instance_id} before simulation")
+        
         if duration_minutes:
             num_metrics = int((duration_minutes * 60) / interval_seconds)
             start_time = datetime.utcnow()

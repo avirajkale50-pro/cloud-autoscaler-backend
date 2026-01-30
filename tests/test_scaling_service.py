@@ -276,17 +276,10 @@ class TestScalingDecisions:
             assert success is False
             assert "no recent metrics" in result.lower() or "not found" in result.lower()
     
-    def test_capacity_update_on_scale_up(self, app, sample_instance):
-        """Test that capacity is updated when scaling up."""
+    def test_scale_up_decision_verified(self, app, sample_instance):
+        """Test scale up decision when CPU is consistently high."""
         with app.app_context():
-            instance = Instance.query.filter_by(
-                instance_id=sample_instance['instance_id']
-            ).first()
-            
-            initial_cpu_capacity = instance.cpu_capacity
-            initial_scale_level = instance.current_scale_level
-            
-            # Create metrics for scale up
+            # Create metrics with sustained high CPU
             base_time = datetime.utcnow()
             for i in range(10):
                 metric = Metric(
@@ -303,28 +296,13 @@ class TestScalingDecisions:
             
             success, result = make_scaling_decision(sample_instance['instance_id'])
             
-            # Refresh instance
-            db.session.refresh(instance)
-            
-            if success and hasattr(result, 'decision') and result.decision == "scale_up":
-                assert instance.cpu_capacity > initial_cpu_capacity
-                assert instance.current_scale_level > initial_scale_level
+            assert success is True
+            if hasattr(result, 'decision'):
+                assert result.decision == "scale_up"
     
-    def test_capacity_update_on_scale_down(self, app, sample_instance):
-        """Test that capacity is updated when scaling down."""
+    def test_scale_down_decision_verified(self, app, sample_instance):
+        """Test scale down decision when usage is consistently low."""
         with app.app_context():
-            instance = Instance.query.filter_by(
-                instance_id=sample_instance['instance_id']
-            ).first()
-            
-            # Set initial higher capacity
-            instance.cpu_capacity = 200.0
-            instance.current_scale_level = 2
-            db.session.commit()
-            
-            initial_cpu_capacity = instance.cpu_capacity
-            initial_scale_level = instance.current_scale_level
-            
             # Create metrics for scale down
             base_time = datetime.utcnow()
             for i in range(10):
@@ -342,9 +320,6 @@ class TestScalingDecisions:
             
             success, result = make_scaling_decision(sample_instance['instance_id'])
             
-            # Refresh instance
-            db.session.refresh(instance)
-            
-            if success and hasattr(result, 'decision') and result.decision == "scale_down":
-                assert instance.cpu_capacity < initial_cpu_capacity
-                assert instance.current_scale_level < initial_scale_level
+            assert success is True
+            if hasattr(result, 'decision'):
+                assert result.decision == "scale_down"

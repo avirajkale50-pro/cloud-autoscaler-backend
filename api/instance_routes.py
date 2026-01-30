@@ -33,11 +33,7 @@ def create_instance(current_user):
                 'instance_type': result.instance_type,
                 'region': result.region,
                 'is_monitoring': result.is_monitoring,
-                'is_mock': result.is_mock,
-                'cpu_capacity': result.cpu_capacity,
-                'memory_capacity': result.memory_capacity,
-                'network_capacity': result.network_capacity,
-                'current_scale_level': result.current_scale_level
+                'is_mock': result.is_mock
             }
         }), 201
     else:
@@ -58,10 +54,6 @@ def get_instances(current_user):
             'region': inst.region,
             'is_monitoring': inst.is_monitoring,
             'is_mock': inst.is_mock,
-            'cpu_capacity': inst.cpu_capacity,
-            'memory_capacity': inst.memory_capacity,
-            'network_capacity': inst.network_capacity,
-            'current_scale_level': inst.current_scale_level,
             'created_at': inst.created_at.isoformat()
         } for inst in instances]
     }), 200

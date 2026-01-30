@@ -98,11 +98,7 @@ def sample_instance(app, sample_user):
             region='us-east-1',
             user_id=sample_user['id'],  # Use UUID object directly
             is_monitoring=False,
-            is_mock=True,
-            cpu_capacity=100.0,
-            memory_capacity=100.0,
-            network_capacity=100.0,
-            current_scale_level=1
+            is_mock=True
         )
         db.session.add(instance)
         db.session.commit()

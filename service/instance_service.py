@@ -24,12 +24,7 @@ def register_instance(user_id, instance_id, instance_type, region, is_mock=False
         instance_type=instance_type,
         region=region,
         user_id=user_id,
-        is_monitoring=False,
-        is_mock=is_mock,
-        cpu_capacity=100.0,
-        memory_capacity=100.0,
-        network_capacity=100.0,
-        current_scale_level=1
+        is_mock=is_mock
     )
     
     try:

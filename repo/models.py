@@ -26,10 +26,6 @@ class Instance(db.Model):
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), nullable=False)
     is_monitoring = db.Column(db.Boolean, default=False)
     is_mock = db.Column(db.Boolean, default=False)
-    cpu_capacity = db.Column(db.Float, default=100.0)  
-    memory_capacity = db.Column(db.Float, default=100.0)  
-    network_capacity = db.Column(db.Float, default=100.0)  
-    current_scale_level = db.Column(db.Integer, default=1)
     deleted_at = db.Column(db.DateTime, nullable=True, default=None)
     last_decision = db.Column(db.String, nullable=True, default=None)  # scale_up / scale_down / no_action
     metrics = db.relationship('Metric', backref='instance', lazy=True)

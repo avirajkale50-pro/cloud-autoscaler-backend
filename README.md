@@ -332,11 +332,7 @@ Content-Type: application/json
     "instance_type": "t2.micro",
     "region": "us-east-1",
     "is_monitoring": false,
-    "is_mock": false,
-    "cpu_capacity": 100.0,
-    "memory_capacity": 100.0,
-    "network_capacity": 100.0,
-    "current_scale_level": 1
+    "is_mock": false
   }
 }
 ```
@@ -380,10 +376,6 @@ Authorization: Bearer <your-jwt-token>
       "region": "us-east-1",
       "is_monitoring": true,
       "is_mock": false,
-      "cpu_capacity": 150.0,
-      "memory_capacity": 150.0,
-      "network_capacity": 150.0,
-      "current_scale_level": 2,
       "created_at": "2026-01-22T05:16:25.123456"
     }
   ]
@@ -703,24 +695,19 @@ Content-Type: application/json
 
 4. **Verify scale-up decision** was made
 
-5. **Check instance capacity:**
-   - Method: `GET`
-   - URL: `http://localhost:5000/api/instances/`
-   - Verify `cpu_capacity` increased to 150%
-
 ---
 
 ## Scaling Logic
 
-The autoscaler uses a **3-tier priority system** to make intelligent scaling decisions based on CPU, Memory, and Network metrics.
+The autoscaler uses a **3-tier priority system** to make intelligent scaling **recommendations** based on CPU, Memory, and Network metrics. The system analyzes resource usage and provides decisions (scale_up, scale_down, or no_action) without automatically adjusting instance capacity.
 
 ### Decision Priority Levels
 
 | Priority | Condition | Action | Duration Required |
 |----------|-----------|--------|-------------------|
-| **1** | CPU < 10% **AND** Memory < 20% | Scale Down | 5 minutes sustained |
-| **2** | CPU > 90% **OR** Memory > 90% | Scale Up | 5 minutes sustained |
-| **3** | IQR-based outlier detection | Scale Up/Down/No Action | Based on last 5 minutes |
+| **1** | CPU < 10% **AND** Memory < 20% | Recommend Scale Down | 5 minutes sustained |
+| **2** | CPU > 90% **OR** Memory > 90% | Recommend Scale Up | 5 minutes sustained |
+| **3** | IQR-based outlier detection | Recommend Scale Up/Down/No Action | Based on last 5 minutes |
 
 ---
 
@@ -746,8 +733,6 @@ Decision: Scale Down if percentage ≥ 80%
 **Outcome:**
 - **Decision**: `scale_down`
 - **Metric Flagged**: `is_outlier = True`, `outlier_type = scale_down`
-- **Capacity Change**: CPU, Memory, Network capacity × 0.67 (33% reduction)
-- **Scale Level**: Decremented by 1
 
 ---
 
@@ -781,8 +766,6 @@ Decision: Scale Up if percentage ≥ 80%
 **Outcome:**
 - **Decision**: `scale_up`
 - **Metric Flagged**: `is_outlier = True`, `outlier_type = scale_up`
-- **Capacity Change**: CPU, Memory, Network capacity × 1.5 (50% increase)
-- **Scale Level**: Incremented by 1
 
 ---
 
@@ -896,45 +879,6 @@ Vote Tally:
 - Scale Down Votes: 1
 
 **Decision:** `scale_up` (scale_up_votes ≥ 2)
-
----
-
-### Capacity Adjustment Formulas
-
-**Scale Up:**
-```
-new_cpu_capacity = current_cpu_capacity × 1.5
-new_memory_capacity = current_memory_capacity × 1.5
-new_network_capacity = current_network_capacity × 1.5
-new_scale_level = current_scale_level + 1
-```
-
-**Scale Down:**
-```
-new_cpu_capacity = current_cpu_capacity × 0.67
-new_memory_capacity = current_memory_capacity × 0.67
-new_network_capacity = current_network_capacity × 0.67
-new_scale_level = current_scale_level - 1
-```
-
-**Note:** 0.67 is approximately the inverse of 1.5, ensuring symmetric scaling.
-
----
-
-### Instance Capacity Tracking
-
-| Field | Initial Value | Scale Up | Scale Down |
-|-------|---------------|----------|------------|
-| `cpu_capacity` | 100.0% | ×1.5 | ×0.67 |
-| `memory_capacity` | 100.0% | ×1.5 | ×0.67 |
-| `network_capacity` | 100.0% | ×1.5 | ×0.67 |
-| `current_scale_level` | 1 | +1 | -1 |
-
-**Example Progression:**
-- Initial: Level 1, Capacity 100%
-- After scale up: Level 2, Capacity 150%
-- After another scale up: Level 3, Capacity 225%
-- After scale down: Level 2, Capacity 150%
 
 ---
 
