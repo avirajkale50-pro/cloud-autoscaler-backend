@@ -7,7 +7,7 @@ from constants.service_constants import (
     SCALE_DOWN_CPU_THRESHOLD, SCALE_DOWN_MEMORY_THRESHOLD,
     SCALE_UP_THRESHOLD, SUSTAINED_DURATION_MINUTES,
     CAPACITY_MULTIPLIER_UP, CAPACITY_MULTIPLIER_DOWN,
-    IQR_MULTIPLIER
+    IQR_MULTIPLIER, IQR_MIN_DATA_DURATION_MINUTES
 )
 
 def check_sustained_usage(instance_id, cpu_threshold=None, memory_threshold=None, duration_minutes=5, above=True):
@@ -165,7 +165,19 @@ def make_scaling_decision(instance_id):
     
     # Priority 3: Use IQR method for normal conditions considering all metrics
     if decision is None:
-        cutoff_time = datetime.utcnow() - timedelta(minutes=5)
+        # Check if we have enough historical data (at least 5 minutes)
+        earliest_needed_time = datetime.utcnow() - timedelta(minutes=IQR_MIN_DATA_DURATION_MINUTES)
+        
+        # Check if the oldest metric is older than the required duration
+        oldest_metric = Metric.query.filter(
+            Metric.instance_id == instance_id
+        ).order_by(Metric.timestamp.asc()).first()
+        
+        if not oldest_metric or oldest_metric.timestamp > earliest_needed_time:
+             decision = "no_action"
+             reason = f"Insufficient historical data duration. Need at least {IQR_MIN_DATA_DURATION_MINUTES} minutes of data for IQR analysis."
+        else:
+            cutoff_time = datetime.utcnow() - timedelta(minutes=5)
         historical_metrics = Metric.query.filter(
             Metric.instance_id == instance_id,
             Metric.timestamp >= cutoff_time,

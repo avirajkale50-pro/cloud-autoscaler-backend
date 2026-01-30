@@ -88,8 +88,8 @@ def get_user_info():
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        total_instances = Instance.query.filter_by(user_id=user_id).count()
-        monitoring_instances = Instance.query.filter_by(user_id=user_id, is_monitoring=True).count()
+        total_instances = Instance.query.filter_by(user_id=user_id, deleted_at=None).count()
+        monitoring_instances = Instance.query.filter_by(user_id=user_id, is_monitoring=True, deleted_at=None).count()
         
         return jsonify({
             'user_id': str(user.id),

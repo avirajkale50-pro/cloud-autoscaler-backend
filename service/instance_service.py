@@ -5,20 +5,6 @@ from util.logger import logger
 from datetime import datetime
 
 def register_instance(user_id, instance_id, instance_type, region, is_mock=False):
-    """
-    Register a new instance for a user.
-    
-    Args:
-        user_id: UUID of the user
-        instance_id: AWS instance ID or mock instance identifier
-        instance_type: Instance type (e.g., t2.micro)
-        region: AWS region or 'mock' for mock instances
-        is_mock: Boolean indicating if this is a mock instance (default: False)
-    
-    Returns:
-        (success, instance_object or error_message)
-    """
-    # Check if instance already exists (not soft-deleted)
     existing_instance = Instance.query.filter_by(instance_id=instance_id).filter(Instance.deleted_at.is_(None)).first()
     if existing_instance:
         return False, "Instance already registered"
@@ -32,7 +18,7 @@ def register_instance(user_id, instance_id, instance_type, region, is_mock=False
     else:
         logger.info(f"Registering mock instance {instance_id}")
     
-    # Create instance with default capacity values
+    # for now capacity is set to 100 
     new_instance = Instance(
         instance_id=instance_id,
         instance_type=instance_type,
