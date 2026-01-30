@@ -56,7 +56,7 @@ def create_app():
             func=scaling_decision_job,
             args=[app],
             trigger='interval',
-            seconds=60
+            seconds= 15
         )
     
     # Register Blueprints

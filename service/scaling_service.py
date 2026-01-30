@@ -121,19 +121,21 @@ def make_scaling_decision(instance_id):
     reasons_list = []
     
     # Priority 1: Scale down if BOTH CPU < SCALE_DOWN_CPU_THRESHOLD AND memory < SCALE_DOWN_MEMORY_THRESHOLD sustained for SUSTAINED_DURATION_MINUTES minutes
-    if current_cpu is not None and current_memory is not None:
-        is_sustained, percentage = check_sustained_usage(
-            instance_id, 
-            cpu_threshold=SCALE_DOWN_CPU_THRESHOLD, 
-            memory_threshold=SCALE_DOWN_MEMORY_THRESHOLD, 
-            duration_minutes=SUSTAINED_DURATION_MINUTES, 
-            above=False
-        )
-        if is_sustained:
-            decision = "scale_down"
-            reason = f"Sustained scale down: CPU < {SCALE_DOWN_CPU_THRESHOLD}% AND Memory < {SCALE_DOWN_MEMORY_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: CPU={current_cpu:.2f}%, Memory={current_memory:.2f}%)"
-            is_outlier = True
-            outlier_type = "scale_down"
+    # We proceed even if current metrics are None, as long as we have enough historical data
+    is_sustained, percentage = check_sustained_usage(
+        instance_id, 
+        cpu_threshold=SCALE_DOWN_CPU_THRESHOLD, 
+        memory_threshold=SCALE_DOWN_MEMORY_THRESHOLD, 
+        duration_minutes=SUSTAINED_DURATION_MINUTES, 
+        above=False
+    )
+    if is_sustained:
+        decision = "scale_down"
+        curr_cpu_str = f"{current_cpu:.2f}" if current_cpu is not None else "N/A"
+        curr_mem_str = f"{current_memory:.2f}" if current_memory is not None else "N/A"
+        reason = f"Sustained scale down: CPU < {SCALE_DOWN_CPU_THRESHOLD}% AND Memory < {SCALE_DOWN_MEMORY_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: CPU={curr_cpu_str}%, Memory={curr_mem_str}%)"
+        is_outlier = True
+        outlier_type = "scale_down"
     
     # Priority 2: Scale up if CPU > SCALE_UP_THRESHOLD% OR memory > SCALE_UP_THRESHOLD% sustained for SUSTAINED_DURATION_MINUTES minutes
     if decision is None:
