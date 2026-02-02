@@ -138,4 +138,4 @@ def register_middleware(app):
         logger.warning(f"400 Bad Request: {request.path}")
         return jsonify({'error': 'Bad request', 'message': str(error)}), 400
     
-    logger.info("Middleware registered successfully")
+    # logger.info("Middleware registered successfully")

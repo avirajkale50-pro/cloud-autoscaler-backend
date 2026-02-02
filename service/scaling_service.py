@@ -11,7 +11,10 @@ from constants.service_constants import (
 
 def check_sustained_usage(instance_id, cpu_threshold=None, memory_threshold=None, duration_minutes=5, above=True):
     """
-    Check if CPU/memory usage has been sustained above or below thresholds for a given duration
+    Check if CPU/memory usage has been sustained above or below thresholds for a given duration.
+    
+    For scale up (above=True): Returns True if CPU >= threshold OR Memory >= threshold
+    For scale down (above=False): Returns True if CPU < threshold OR Memory < threshold
     """
     cutoff_time = datetime.utcnow() - timedelta(minutes=duration_minutes)
     
@@ -31,21 +34,26 @@ def check_sustained_usage(instance_id, cpu_threshold=None, memory_threshold=None
     for metric in metrics:
         condition_met = False
         
+        # For scale up (above=True): Use OR logic - either CPU or Memory exceeding threshold
+        # For scale down (above=False): Use OR logic - either CPU or Memory below threshold
+        
         if cpu_threshold is not None and metric.cpu_utilization is not None:
             if above:
-                condition_met = metric.cpu_utilization > cpu_threshold
+                condition_met = metric.cpu_utilization >= cpu_threshold
             else:
                 condition_met = metric.cpu_utilization < cpu_threshold
         
         if memory_threshold is not None and metric.memory_usage is not None:
             if above:
-                if cpu_threshold is not None:
-                    condition_met = condition_met or metric.memory_usage > memory_threshold
-                else:
-                    condition_met = metric.memory_usage > memory_threshold
-            else:
+                # OR logic: if either CPU or Memory is high
                 if cpu_threshold is not None and metric.cpu_utilization is not None:
-                    condition_met = metric.cpu_utilization < cpu_threshold and metric.memory_usage < memory_threshold
+                    condition_met = condition_met or metric.memory_usage >= memory_threshold
+                else:
+                    condition_met = metric.memory_usage >= memory_threshold
+            else:
+                # OR logic: if either CPU or Memory is low
+                if cpu_threshold is not None and metric.cpu_utilization is not None:
+                    condition_met = condition_met or metric.memory_usage < memory_threshold
                 else:
                     condition_met = metric.memory_usage < memory_threshold
         
@@ -123,7 +131,7 @@ def make_scaling_decision(instance_id):
     outlier_type = None
     reasons_list = []
     
-    # Priority 1: Scale down if BOTH CPU < SCALE_DOWN_CPU_THRESHOLD AND memory < SCALE_DOWN_MEMORY_THRESHOLD sustained for SUSTAINED_DURATION_MINUTES minutes
+    # Priority 1: Scale down if CPU < SCALE_DOWN_CPU_THRESHOLD OR memory < SCALE_DOWN_MEMORY_THRESHOLD sustained for SUSTAINED_DURATION_MINUTES minutes
     # We proceed even if current metrics are None, as long as we have enough historical data
     is_sustained, percentage = check_sustained_usage(
         instance_id, 
@@ -137,11 +145,11 @@ def make_scaling_decision(instance_id):
         decision = "scale_down"
         curr_cpu_str = f"{current_cpu:.2f}" if current_cpu is not None else "N/A"
         curr_mem_str = f"{current_memory:.2f}" if current_memory is not None else "N/A"
-        reason = f"Sustained scale down: CPU < {SCALE_DOWN_CPU_THRESHOLD}% AND Memory < {SCALE_DOWN_MEMORY_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: CPU={curr_cpu_str}%, Memory={curr_mem_str}%)"
+        reason = f"Sustained scale down: CPU < {SCALE_DOWN_CPU_THRESHOLD}% OR Memory < {SCALE_DOWN_MEMORY_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: CPU={curr_cpu_str}%, Memory={curr_mem_str}%)"
         is_outlier = True
         outlier_type = "scale_down"
     
-    # Priority 2: Scale up if CPU > SCALE_UP_THRESHOLD% OR memory > SCALE_UP_THRESHOLD% sustained for SUSTAINED_DURATION_MINUTES minutes
+    # Priority 2: Scale up if CPU >= SCALE_UP_THRESHOLD% OR memory >= SCALE_UP_THRESHOLD% sustained for SUSTAINED_DURATION_MINUTES minutes
     if decision is None:
         if current_cpu is not None:
             is_sustained, percentage = check_sustained_usage(
@@ -152,7 +160,7 @@ def make_scaling_decision(instance_id):
             )
             if is_sustained:
                 decision = "scale_up"
-                reason = f"Sustained scale up: CPU > {SCALE_UP_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: {current_cpu:.2f}%)"
+                reason = f"Sustained scale up: CPU >= {SCALE_UP_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: {current_cpu:.2f}%)"
                 is_outlier = True
                 outlier_type = "scale_up"
         
@@ -165,7 +173,7 @@ def make_scaling_decision(instance_id):
             )
             if is_sustained:
                 decision = "scale_up"
-                reason = f"Sustained scale up: Memory > {SCALE_UP_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: {current_memory:.2f}%)"
+                reason = f"Sustained scale up: Memory >= {SCALE_UP_THRESHOLD}% for {percentage:.1f}% of last {SUSTAINED_DURATION_MINUTES} minutes (Current: {current_memory:.2f}%)"
                 is_outlier = True
                 outlier_type = "scale_up"
     
@@ -315,12 +323,31 @@ def make_scaling_decision(instance_id):
     
     # Only save to database and log if state has changed
     if is_state_change:
+        # Calculate average metrics from the decision window for more accurate representation
+        # Use the sustained duration window to get metrics that actually influenced the decision
+        decision_window_minutes = SUSTAINED_DURATION_MINUTES if decision in ["scale_up", "scale_down"] else 5
+        avg_metrics = calculate_metrics_mean(instance_id, time_window_minutes=decision_window_minutes)
+        
+        # Use average values if available, otherwise fall back to current values
+        if avg_metrics is not None:
+            avg_cpu, avg_memory, avg_network_in, avg_network_out = avg_metrics
+            stored_cpu = avg_cpu if avg_cpu is not None else current_cpu
+            stored_memory = avg_memory if avg_memory is not None else current_memory
+            stored_network_in = avg_network_in if avg_network_in is not None else current_network_in
+            stored_network_out = avg_network_out if avg_network_out is not None else current_network_out
+        else:
+            # Fall back to current values if no historical data
+            stored_cpu = current_cpu
+            stored_memory = current_memory
+            stored_network_in = current_network_in
+            stored_network_out = current_network_out
+        
         scaling_decision = ScalingDecision(
             instance_id=instance_id,
-            cpu_utilization=current_cpu,
-            memory_usage=current_memory,
-            network_in=current_network_in,
-            network_out=current_network_out,
+            cpu_utilization=stored_cpu,
+            memory_usage=stored_memory,
+            network_in=stored_network_in,
+            network_out=stored_network_out,
             decision=decision,
             reason=reason
         )

@@ -3,6 +3,7 @@
 A Flask-based backend service that monitors AWS EC2 instances and mock instances, collects performance metrics, and makes intelligent autoscaling decisions based on CPU, memory, and network utilization.
 
 ## Table of Contents
+- [Key Features & Architecture](#key-features--architecture)
 - [Setup and Installation](#setup-and-installation)
 - [Running the Application](#running-the-application)
 - [Viewing Swagger Documentation](#viewing-swagger-documentation)
@@ -11,6 +12,84 @@ A Flask-based backend service that monitors AWS EC2 instances and mock instances
 - [Scaling Logic](#scaling-logic)
 
 ---
+
+## Key Features & Architecture
+
+### 🔐 Global Middleware System
+The application implements a comprehensive middleware layer for authentication, logging, and error handling:
+
+- **Authentication Middleware**: Automatically validates JWT tokens for all protected routes
+- **Request/Response Logging**: Tracks all API requests with timestamps, methods, paths, and IP addresses
+- **Error Handling**: Centralized error handling with consistent JSON responses
+- **Public Routes**: Health checks, authentication endpoints, and Swagger docs are publicly accessible
+
+**Implementation:** [`api/middleware.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/api/middleware.py)
+
+### 📊 Centralized Logging
+Structured logging system with both file and console output:
+
+- **Rotating File Handler**: Logs rotate at 10MB with 5 backup files
+- **Daily Log Files**: Organized by date (e.g., `autoscaler_20260202.log`)
+- **Log Levels**: INFO level for general operations, ERROR for exceptions
+- **Consistent Format**: Timestamp, logger name, level, and message
+
+**Implementation:** [`util/logger.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/util/logger.py)
+
+### 🔧 Constants Module
+Centralized configuration for maintainability and consistency:
+
+**Service Constants** ([`constants/service_constants.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/constants/service_constants.py)):
+- Scaling thresholds (CPU: 20%, Memory: 30% for scale-down; 80% for scale-up)
+- Sustained duration: 5 minutes
+- IQR multiplier: 1.5
+- Mock data generation ranges
+
+**Validation Constants** ([`constants/validation_constants.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/constants/validation_constants.py)):
+- Email regex pattern
+- Minimum password length: 8 characters
+- Required special characters
+
+### ✅ Enhanced Password Validation
+Robust password validation with multiple security requirements:
+
+- Minimum 8 characters
+- At least one number
+- At least one letter
+- At least one special character (!@#$%^&*()-+)
+
+**Implementation:** [`util/validators.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/util/validators.py)
+
+### 🗑️ Soft Delete for Instances
+Instances are soft-deleted instead of permanently removed:
+
+- `deleted_at` timestamp field tracks deletion
+- Deleted instances excluded from user queries
+- Preserves historical data for analytics
+- Prevents accidental data loss
+
+**Database Model:** [`repo/models.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/repo/models.py)
+
+### 📈 Background Job Scheduling
+APScheduler manages periodic tasks:
+
+- **Metrics Collection**: Every 30 seconds for monitored instances
+- **Scaling Decisions**: Every 15 seconds for monitored instances
+- Runs only in main process (prevents duplicate jobs in debug mode)
+
+**Implementation:** [`jobs/tasks.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/jobs/tasks.py)
+
+### 🎯 Improved Scaling Logic
+Enhanced scaling decision algorithm with fixed edge cases:
+
+- **Priority 1**: Sustained low usage (CPU < 10% AND Memory < 20%)
+- **Priority 2**: Sustained high usage (CPU > 90% OR Memory > 90%)
+- **Priority 3**: IQR-based outlier detection with weighted voting
+- **Bug Fixes**: Resolved `UnboundLocalError` and scale-down detection issues
+- **Accurate Metrics**: Stores average values instead of last metric for scaling decisions
+
+**Implementation:** [`service/scaling_service.py`](file:///home/avirajkale50/Github/cloud_resource_autoscaler/backend/service/scaling_service.py)
+
+
 
 ## Setup and Installation
 
@@ -187,6 +266,12 @@ Now you can test any endpoint that requires authentication!
 }
 ```
 
+**Password Requirements:**
+- Minimum 8 characters
+- At least one number
+- At least one letter
+- At least one special character: `!@#$%^&*()-+`
+
 **Success Response (201 Created):**
 ```json
 {
@@ -201,6 +286,35 @@ Now you can test any endpoint that requires authentication!
 ```json
 {
   "error": "Email and password are required"
+}
+```
+
+*400 Bad Request - Invalid email:*
+```json
+{
+  "error": "Invalid email format"
+}
+```
+
+*400 Bad Request - Password validation:*
+```json
+{
+  "error": "Password must be at least 8 characters long"
+}
+```
+```json
+{
+  "error": "Password must contain at least one number"
+}
+```
+```json
+{
+  "error": "Password must contain at least one letter"
+}
+```
+```json
+{
+  "error": "Password must contain at least one special character (!@#$%^&*()-+)"
 }
 ```
 
@@ -705,8 +819,8 @@ The autoscaler uses a **3-tier priority system** to make intelligent scaling **r
 
 | Priority | Condition | Action | Duration Required |
 |----------|-----------|--------|-------------------|
-| **1** | CPU < 10% **AND** Memory < 20% | Recommend Scale Down | 5 minutes sustained |
-| **2** | CPU > 90% **OR** Memory > 90% | Recommend Scale Up | 5 minutes sustained |
+| **1** | CPU < 20% **AND** Memory < 30% | Recommend Scale Down | 5 minutes sustained (≥80% of time) |
+| **2** | CPU > 80% **OR** Memory > 80% | Recommend Scale Up | 5 minutes sustained (≥80% of time) |
 | **3** | IQR-based outlier detection | Recommend Scale Up/Down/No Action | Based on last 5 minutes |
 
 ---
@@ -716,14 +830,14 @@ The autoscaler uses a **3-tier priority system** to make intelligent scaling **r
 **Conditions:**
 ```
 Sustained Usage Check (5 minutes):
-- CPU Utilization < 10%
-- AND Memory Usage < 20%
+- CPU Utilization < 20%
+- AND Memory Usage < 30%
 - Sustained for ≥80% of time window
 ```
 
 **Formula:**
 ```
-matching_count = count of metrics where (CPU < 10% AND Memory < 20%)
+matching_count = count of metrics where (CPU < 20% AND Memory < 30%)
 total_count = total metrics in last 5 minutes
 percentage = (matching_count / total_count) × 100
 
@@ -743,20 +857,20 @@ Decision: Scale Down if percentage ≥ 80%
 **Option A: High CPU**
 ```
 Sustained Usage Check (5 minutes):
-- CPU Utilization > 90%
+- CPU Utilization > 80%
 - Sustained for ≥80% of time window
 ```
 
 **Option B: High Memory**
 ```
 Sustained Usage Check (5 minutes):
-- Memory Usage > 90%
+- Memory Usage > 80%
 - Sustained for ≥80% of time window
 ```
 
 **Formula:**
 ```
-matching_count = count of metrics where (CPU > 90% OR Memory > 90%)
+matching_count = count of metrics where (CPU > 80% OR Memory > 80%)
 total_count = total metrics in last 5 minutes
 percentage = (matching_count / total_count) × 100
 
@@ -805,22 +919,7 @@ Step 5: Compare current value
 | **Network In** | 1 vote | `current_net_in > (Q3 + 1.5×IQR)` | `current_net_in < (Q1 - 1.5×IQR)` |
 | **Network Out** | 1 vote | `current_net_out > (Q3 + 1.5×IQR)` | `current_net_out < (Q1 - 1.5×IQR)` |
 
-**Decision Logic:**
-```
-Total Scale Up Votes = sum of all scale up votes
-Total Scale Down Votes = sum of all scale down votes
 
-If scale_up_votes ≥ 2:
-  Decision = scale_up
-  
-Else If scale_down_votes ≥ 2:
-  Decision = scale_down
-  
-Else:
-  Decision = no_action
-```
-
----
 
 ### Example Calculations
 
@@ -913,7 +1012,7 @@ Metrics are flagged as outliers when:
                ▼
 ┌─────────────────────────────────────┐
 │  Priority 1: Check Sustained Low    │
-│  CPU < 10% AND Memory < 20%         │
+│  CPU < 20% AND Memory < 30%         │
 │  (5 min, ≥80% of time)              │
 └──────────────┬──────────────────────┘
                │
@@ -924,7 +1023,7 @@ Metrics are flagged as outliers when:
                ▼
 ┌─────────────────────────────────────┐
 │  Priority 2: Check Sustained High   │
-│  CPU > 90% OR Memory > 90%          │
+│  CPU > 80% OR Memory > 80%          │
 │  (5 min, ≥80% of time)              │
 └──────────────┬──────────────────────┘
                │
@@ -963,9 +1062,9 @@ Metrics are flagged as outliers when:
 
 | Scenario | CPU | Memory | Network In | Network Out | Votes | Decision |
 |----------|-----|--------|------------|-------------|-------|----------|
-| Extreme Low | <10% | <20% | - | - | N/A | **Scale Down** (Priority 1) |
-| Extreme High | >90% | - | - | - | N/A | **Scale Up** (Priority 2) |
-| Extreme High | - | >90% | - | - | N/A | **Scale Up** (Priority 2) |
+| Extreme Low | <20% | <30% | - | - | N/A | **Scale Down** (Priority 1) |
+| Extreme High | >80% | - | - | - | N/A | **Scale Up** (Priority 2) |
+| Extreme High | - | >80% | - | - | N/A | **Scale Up** (Priority 2) |
 | High CPU Only | >Q3+1.5×IQR | Normal | Normal | Normal | 2 up | **Scale Up** (Priority 3) |
 | Low CPU Only | <Q1-1.5×IQR | Normal | Normal | Normal | 2 down | **Scale Down** (Priority 3) |
 | High CPU + Net | >Q3+1.5×IQR | Normal | >Q3+1.5×IQR | Normal | 3 up | **Scale Up** (Priority 3) |
@@ -993,48 +1092,38 @@ Mock instances allow testing without AWS credentials:
 
 ---
 
-## Important Notes
-
-- **Token Format:** Always use `Bearer <token>` in Authorization header
-- **Token Expiry:** 24 hours
-- **Metrics Collection:** Every 30 seconds (only for monitored instances)
-- **Scaling Decisions:** Every 15 seconds (only for monitored instances)
-- **Base URL:** `http://localhost:5000`
-- **Sustained Usage:** Requires 80% of metrics in 5-minute window
-- **CORS:** Enabled for all origins
-
----
-
-## Troubleshooting
-
-### Database Connection Issues
-- Verify PostgreSQL is running
-- Check `.env` file has correct `DATABASE_URL`
-- Ensure database exists and is accessible
-
-### Token Errors
-- Ensure token is not expired (24-hour lifetime)
-- Verify token is included in `Authorization` header as `Bearer <token>`
-- Check `JWT_SECRET_KEY` is set in `.env`
-
-### No Metrics Being Collected
-- Verify instance monitoring is started
-- Check logs in `logs/` directory
-- For AWS instances, ensure AWS credentials are configured
-- For mock instances, verify `is_mock: true` was set during registration
-
----
-
 ## Project Structure
 
 ```
 backend/
 ├── api/                    # API route handlers
+│   ├── auth_routes.py      # User authentication endpoints
+│   ├── instance_routes.py  # Instance management endpoints
+│   ├── metrics_routes.py   # Metrics and scaling decision endpoints
+│   ├── middleware.py       # Global middleware (auth, logging, error handling)
+│   └── routes.py           # Health check endpoint
+├── constants/              # Application constants
+│   ├── service_constants.py      # Scaling thresholds, mock data ranges
+│   └── validation_constants.py   # Email/password validation rules
+├── jobs/                   # Background scheduled tasks
+│   └── tasks.py            # Metrics collection and scaling decision jobs
 ├── repo/                   # Database models and repository
-├── service/                # Business logic (monitoring, scaling)
-├── util/                   # Utilities (logging, auth)
-├── static/                 # Static files (swagger.yaml)
-├── logs/                   # Application logs
+│   ├── db.py               # Database initialization
+│   └── models.py           # SQLAlchemy models (User, Instance, Metric, ScalingDecision)
+├── service/                # Business logic
+│   ├── aws_monitor.py      # AWS CloudWatch integration
+│   ├── mock_monitor.py     # Mock metrics generation
+│   ├── scaling_service.py  # Scaling decision logic (IQR, sustained usage)
+│   ├── instance_service.py # Instance management logic
+│   └── user_service.py     # User management logic
+├── util/                   # Utility modules
+│   ├── auth.py             # JWT token generation and validation
+│   ├── logger.py           # Centralized logging configuration
+│   └── validators.py       # Email and password validation
+├── static/                 # Static files
+│   └── swagger.yaml        # OpenAPI/Swagger specification
+├── logs/                   # Application logs (auto-generated)
+├── tests/                  # Unit and integration tests
 ├── main.py                 # Application entry point
 ├── requirements.txt        # Python dependencies
 ├── .env                    # Environment variables
